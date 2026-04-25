@@ -33,6 +33,9 @@ struct Sidebar: View {
         .onReceive(NotificationCenter.default.publisher(for: .toggleSidebar)) { _ in
             toggleExpanded()
         }
+        .onAppear {
+            EmojiPickerController.shared.prepare()
+        }
     }
 
     private func toggleExpanded() {
@@ -40,6 +43,12 @@ struct Sidebar: View {
             expanded.toggle()
         }
         UserDefaults.standard.set(expanded, forKey: "muxy.sidebarExpanded")
+    }
+
+    private func pickEmoji(for project: Project) {
+        EmojiPickerController.shared.pick { emoji in
+            projectStore.setIcon(id: project.id, to: emoji)
+        }
     }
 
     private var addButton: some View {
@@ -67,6 +76,8 @@ struct Sidebar: View {
                                 onRemove: { remove(project) },
                                 onRename: { projectStore.rename(id: project.id, to: $0) },
                                 onSetLogo: { projectStore.setLogo(id: project.id, to: $0) },
+                                onPickIcon: { pickEmoji(for: project) },
+                                onSetIcon: { projectStore.setIcon(id: project.id, to: $0) },
                                 onSetIconColor: { projectStore.setIconColor(id: project.id, to: $0) }
                             )
                         } else {
@@ -78,6 +89,8 @@ struct Sidebar: View {
                                 onRemove: { remove(project) },
                                 onRename: { projectStore.rename(id: project.id, to: $0) },
                                 onSetLogo: { projectStore.setLogo(id: project.id, to: $0) },
+                                onPickIcon: { pickEmoji(for: project) },
+                                onSetIcon: { projectStore.setIcon(id: project.id, to: $0) },
                                 onSetIconColor: { projectStore.setIconColor(id: project.id, to: $0) }
                             )
                         }

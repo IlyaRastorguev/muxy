@@ -10,6 +10,8 @@ struct ProjectRow: View {
     let onRemove: () -> Void
     let onRename: (String) -> Void
     let onSetLogo: (String?) -> Void
+    let onPickIcon: () -> Void
+    let onSetIcon: (String?) -> Void
     let onSetIconColor: (String?) -> Void
 
     @Environment(AppState.self) private var appState
@@ -64,6 +66,10 @@ struct ProjectRow: View {
                 Button("Set Logo...") { pickLogoImage() }
                 if project.logo != nil {
                     Button("Remove Logo") { onSetLogo(nil) }
+                }
+                Button("Set Emoji...", action: onPickIcon)
+                if project.icon != nil {
+                    Button("Remove Emoji") { onSetIcon(nil) }
                 }
                 Button("Set Icon Color...") { showColorPicker = true }
                 if project.iconColor != nil {
@@ -147,9 +153,12 @@ struct ProjectRow: View {
         let unread = NotificationStore.shared.unreadCount(for: project.id)
         return ZStack {
             RoundedRectangle(cornerRadius: 8)
-                .fill(iconBackground(hasLogo: logo != nil))
+                .fill(iconBackground(hasLogo: logo != nil && project.icon == nil))
 
-            if let logo {
+            if let icon = project.icon {
+                Text(icon)
+                    .font(.system(size: 18))
+            } else if let logo {
                 Image(nsImage: logo)
                     .resizable()
                     .scaledToFill()
