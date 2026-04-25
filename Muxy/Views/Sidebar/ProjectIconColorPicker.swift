@@ -17,8 +17,12 @@ extension ProjectIconColor {
         guard let identifier else { return nil }
         if let swatch = swatch(for: identifier) { return swatch.foreground }
         guard let rgb = rgb(fromHex: identifier) else { return nil }
-        let luminance = 0.2126 * rgb.0 + 0.7152 * rgb.1 + 0.0722 * rgb.2
-        return luminance > 0.6 ? .black : .white
+        let luminance = 0.2126 * linearized(rgb.0) + 0.7152 * linearized(rgb.1) + 0.0722 * linearized(rgb.2)
+        return luminance > 0.179 ? .black : .white
+    }
+
+    private static func linearized(_ component: Double) -> Double {
+        component <= 0.04045 ? component / 12.92 : pow((component + 0.055) / 1.055, 2.4)
     }
 }
 
