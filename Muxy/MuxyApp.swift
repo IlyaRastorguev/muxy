@@ -11,7 +11,6 @@ struct MuxyApp: App {
     private let updateService = UpdateService.shared
 
     init() {
-        AppAppearancePreferences.writeGhosttyConfig()
         let environment = AppEnvironment.live
         let projectStore = ProjectStore(persistence: environment.projectPersistence)
         let worktreeStore = WorktreeStore(
@@ -326,7 +325,7 @@ struct WindowConfigurator: NSViewRepresentable {
             window.contentView?.wantsLayer = true
             window.contentView?.layer?.backgroundColor = CGColor.clear
             window.contentView?.layer?.isOpaque = false
-            if let app = GhosttyService.shared.app {
+            if blur > 0, let app = GhosttyService.shared.app {
                 ghostty_set_window_background_blur(app, Unmanaged.passUnretained(window).toOpaque())
             }
             configureVisualEffectView(in: window, blurRadius: blur)

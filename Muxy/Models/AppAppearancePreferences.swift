@@ -7,6 +7,7 @@ enum AppAppearancePreferences {
     static let defaultBlurRadius: Double = 0
     static let transparencyRange: ClosedRange<Double> = 0 ... 100
     static let blurRadiusRange: ClosedRange<Double> = 0 ... 64
+    static let maximumOpacityWithBlur: Double = 0.85
 
     static var transparencyLevel: Double {
         clampedTransparencyLevel(UserDefaults.standard.object(forKey: transparencyLevelKey) as? Double ?? defaultTransparencyLevel)
@@ -34,7 +35,7 @@ enum AppAppearancePreferences {
     static func effectiveBackgroundOpacity(transparencyLevel: Double, blurRadius: Double) -> Double {
         let opacity = clampedTransparencyLevel(transparencyLevel) / 100
         guard clampedBlurRadius(blurRadius) > 0 else { return opacity }
-        return min(opacity, 0.85)
+        return min(opacity, maximumOpacityWithBlur)
     }
 
     static func opacityConfigValue(for transparencyLevel: Double, blurRadius: Double = Self.blurRadius) -> String {
