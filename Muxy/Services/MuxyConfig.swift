@@ -44,6 +44,19 @@ final class MuxyConfig {
         try? writeGhosttyConfig(content)
     }
 
+    func removeConfigValue(_ key: String) {
+        var content = readGhosttyConfig()
+        var lines = content.components(separatedBy: "\n")
+        lines.removeAll { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix(key) else { return false }
+            let afterKey = trimmed.dropFirst(key.count).trimmingCharacters(in: .whitespaces)
+            return afterKey.hasPrefix("=")
+        }
+        content = lines.joined(separator: "\n")
+        try? writeGhosttyConfig(content)
+    }
+
     func configValue(for key: String) -> String? {
         let lines = readGhosttyConfig().components(separatedBy: .newlines)
         guard let index = findConfigLineIndex(for: key, in: lines) else { return nil }

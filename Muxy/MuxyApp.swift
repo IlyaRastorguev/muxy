@@ -1,4 +1,5 @@
 import AppKit
+import GhosttyKit
 import SwiftUI
 
 @main
@@ -10,6 +11,7 @@ struct MuxyApp: App {
     private let updateService = UpdateService.shared
 
     init() {
+        AppAppearancePreferences.writeGhosttyConfig()
         let environment = AppEnvironment.live
         let projectStore = ProjectStore(persistence: environment.projectPersistence)
         let worktreeStore = WorktreeStore(
@@ -116,8 +118,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate()
         setAppIcon()
-        _ = GhosttyService.shared
         ThemeService.shared.applyDefaultThemeIfNeeded()
+        AppAppearancePreferences.writeGhosttyConfig()
+        _ = GhosttyService.shared
         UpdateService.shared.start()
         ModifierKeyMonitor.shared.start()
         NotificationSocketServer.shared.start()
@@ -209,6 +212,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 struct WindowConfigurator: NSViewRepresentable {
     let configVersion: Int
+    let transparencyLevel: Double
+    let blurRadius: Double
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -224,7 +229,11 @@ struct WindowConfigurator: NSViewRepresentable {
             w.styleMask.insert(.fullSizeContentView)
             w.isMovable = false
             w.isMovableByWindowBackground = false
-            Self.applyWindowBackground(w)
+            context.coordinator.applyWindowAppearance(
+                window: w,
+                transparencyLevel: transparencyLevel,
+                blurRadius: blurRadius
+            )
             Self.repositionTrafficLights(in: w)
             Self.hideTitlebarDecorationView(in: w)
             Self.neutralizeSafeAreaInsets(in: w)
@@ -235,12 +244,11 @@ struct WindowConfigurator: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSView, context: Context) {
         guard let w = nsView.window else { return }
-        Self.applyWindowBackground(w)
-    }
-
-    private static func applyWindowBackground(_ window: NSWindow) {
-        window.isOpaque = true
-        window.backgroundColor = MuxyTheme.nsBg
+        context.coordinator.applyWindowAppearance(
+            window: w,
+            transparencyLevel: transparencyLevel,
+            blurRadius: blurRadius
+        )
     }
 
     static func neutralizeSafeAreaInsets(in window: NSWindow) {
@@ -304,6 +312,58 @@ struct WindowConfigurator: NSViewRepresentable {
 
     final class Coordinator: NSObject {
         private var observations: [NSObjectProtocol] = []
+        private weak var visualEffectView: NSVisualEffectView?
+
+        @MainActor
+        func applyWindowAppearance(window: NSWindow, transparencyLevel: Double, blurRadius: Double) {
+            let opacity = AppAppearancePreferences.effectiveBackgroundOpacity(
+                transparencyLevel: transparencyLevel,
+                blurRadius: blurRadius
+            )
+            let blur = AppAppearancePreferences.clampedBlurRadius(blurRadius)
+            window.isOpaque = opacity >= 1 && blur == 0
+            window.backgroundColor = window.isOpaque ? MuxyTheme.nsBg : .clear
+            window.contentView?.wantsLayer = true
+            window.contentView?.layer?.backgroundColor = CGColor.clear
+            window.contentView?.layer?.isOpaque = false
+            if let app = GhosttyService.shared.app {
+                ghostty_set_window_background_blur(app, Unmanaged.passUnretained(window).toOpaque())
+            }
+            configureVisualEffectView(in: window, blurRadius: blur)
+        }
+
+        @MainActor
+        private func configureVisualEffectView(in window: NSWindow, blurRadius: Double) {
+            guard let contentView = window.contentView else { return }
+            if blurRadius <= 0 {
+                visualEffectView?.removeFromSuperview()
+                visualEffectView = nil
+                return
+            }
+
+            let effectView: NSVisualEffectView
+            if let existing = visualEffectView, existing.superview === contentView {
+                effectView = existing
+            } else {
+                let created = NSVisualEffectView()
+                created.translatesAutoresizingMaskIntoConstraints = false
+                created.blendingMode = .behindWindow
+                created.material = .underWindowBackground
+                created.state = .active
+                created.isEmphasized = true
+                contentView.addSubview(created, positioned: .below, relativeTo: nil)
+                NSLayoutConstraint.activate([
+                    created.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+                    created.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+                    created.topAnchor.constraint(equalTo: contentView.topAnchor),
+                    created.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+                ])
+                visualEffectView = created
+                effectView = created
+            }
+
+            effectView.alphaValue = max(0.35, blurRadius / AppAppearancePreferences.blurRadiusRange.upperBound)
+        }
 
         func observe(window: NSWindow) {
             guard observations.isEmpty else { return }

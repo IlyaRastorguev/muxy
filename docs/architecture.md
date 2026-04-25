@@ -60,6 +60,7 @@ Muxy/
     EditorSettings.swift      @Observable editor preferences (default editor, font)
     TextBackingStore.swift    Line-array backing store for editor documents
     ViewportState.swift       Viewport window computation and line mapping for editor documents
+    AppAppearancePreferences.swift UserDefaults-backed app background transparency and blur preferences
     TerminalSettings.swift    Terminal preference keys and quick-select label layout helpers
     ProjectLifecyclePreferences.swift  Project lifecycle preferences (keep-open-when-no-tabs)
     Project.swift             Project folder metadata
@@ -188,7 +189,7 @@ Muxy/
     Settings/
       SettingsView.swift      Settings window layout
       SettingsComponents.swift  Shared section/row primitives used across all tabs
-      AppearanceSettingsView.swift  Theme settings tab
+      AppearanceSettingsView.swift  Theme, app background transparency, blur, and source-control display settings tab
       EditorSettingsView.swift  Editor preferences tab (default editor, font)
       TerminalSettingsView.swift  Terminal preferences tab, including quick-select label layout
       KeyboardShortcutsSettingsView.swift  Shortcut config tab

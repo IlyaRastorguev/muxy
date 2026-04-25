@@ -31,16 +31,26 @@ enum MuxyTheme {
     @MainActor static var colorScheme: ColorScheme { snapshot.colorScheme }
 
     @MainActor private static var cachedVersion: Int = -1
+    @MainActor private static var cachedOpacity: Double = -1
+    @MainActor private static var cachedBlurRadius: Double = -1
     @MainActor private static var cachedSnapshot: Snapshot?
 
     @MainActor private static var snapshot: Snapshot {
         let version = GhosttyService.shared.configVersion
-        if let cached = cachedSnapshot, cachedVersion == version {
+        let opacity = AppAppearancePreferences.backgroundOpacity
+        let blurRadius = AppAppearancePreferences.blurRadius
+        if let cached = cachedSnapshot,
+           cachedVersion == version,
+           cachedOpacity == opacity,
+           cachedBlurRadius == blurRadius
+        {
             return cached
         }
         let newSnapshot = Snapshot(from: GhosttyService.shared)
         cachedSnapshot = newSnapshot
         cachedVersion = version
+        cachedOpacity = opacity
+        cachedBlurRadius = blurRadius
         return newSnapshot
     }
 }
@@ -77,8 +87,9 @@ extension MuxyTheme {
             let fgColor = service.foregroundColor
             let accentColor = service.accentColor
 
-            nsBg = bgColor
-            bg = Color(nsColor: bgColor)
+            let backgroundOpacity = AppAppearancePreferences.backgroundOpacity
+            nsBg = bgColor.withAlphaComponent(backgroundOpacity)
+            bg = Color(nsColor: bgColor.withAlphaComponent(backgroundOpacity))
             fg = Color(nsColor: fgColor)
             fgMuted = Color(nsColor: fgColor.withAlphaComponent(0.65))
             fgDim = Color(nsColor: fgColor.withAlphaComponent(0.4))

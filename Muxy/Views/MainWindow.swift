@@ -58,6 +58,10 @@ struct MainWindow: View {
     @State private var showWorktreeSwitcher = false
     @State private var isFullScreen = false
     @State private var sidebarExpanded = UserDefaults.standard.bool(forKey: "muxy.sidebarExpanded")
+    @AppStorage(AppAppearancePreferences.transparencyLevelKey)
+    private var transparencyLevel = AppAppearancePreferences.defaultTransparencyLevel
+    @AppStorage(AppAppearancePreferences.blurRadiusKey)
+    private var blurRadius = AppAppearancePreferences.defaultBlurRadius
     @AppStorage("muxy.notifications.toastPosition") private var toastPositionRaw = ToastPosition.topCenter.rawValue
     private let trafficLightWidth: CGFloat = 75
 
@@ -230,7 +234,11 @@ struct MainWindow: View {
             onMouseBack: { appState.goBack() },
             onMouseForward: { appState.goForward() }
         ))
-        .background(WindowConfigurator(configVersion: ghostty.configVersion))
+        .background(WindowConfigurator(
+            configVersion: ghostty.configVersion,
+            transparencyLevel: transparencyLevel,
+            blurRadius: blurRadius
+        ))
         .background(WindowTitleUpdater(title: windowTitle))
         .ignoresSafeArea(.container, edges: .top)
         .onReceive(NotificationCenter.default.publisher(for: .quickOpen)) { _ in
