@@ -89,7 +89,7 @@ private struct SettingsSliderRow: View {
     var body: some View {
         SettingsRow(label) {
             HStack(spacing: 8) {
-                Slider(value: $value, in: range, step: 1)
+                Slider(value: $value, in: range)
                     .frame(width: 150)
                 Text(displayValue)
                     .font(.system(size: SettingsMetrics.labelFontSize, design: .monospaced))
