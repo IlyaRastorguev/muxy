@@ -73,6 +73,9 @@ struct ExpandedProjectRow: View {
                 Button("Remove Logo") { onSetLogo(nil) }
             }
             Button("Set Icon Color...") { showColorPicker = true }
+            Button("Generate Icon Color") {
+                onSetIconColor(ProjectIconColor.generatedHex(for: project.name))
+            }
             if project.iconColor != nil {
                 Button("Reset Icon Color") { onSetIconColor(nil) }
             }

@@ -5,6 +5,8 @@ struct AppearanceSettingsView: View {
     @State private var showThemePicker = false
     @State private var currentTheme: String?
     @AppStorage("muxy.vcsDisplayMode") private var vcsDisplayMode = VCSDisplayMode.attached.rawValue
+    @AppStorage(ProjectColorGenerationPreferences.automaticNewProjectColorsKey)
+    private var automaticNewProjectColors = false
 
     var body: some View {
         SettingsContainer {
@@ -30,6 +32,16 @@ struct AppearanceSettingsView: View {
                             .environment(themeService)
                     }
                 }
+            }
+
+            SettingsSection(
+                "Projects",
+                footer: "New projects get a stable icon color derived from their project name."
+            ) {
+                SettingsToggleRow(
+                    label: "Generate colors for new projects",
+                    isOn: $automaticNewProjectColors
+                )
             }
 
             SettingsSection("Source Control", showsDivider: false) {

@@ -16,6 +16,7 @@ MuxyShared/                    Shared types (macOS + iOS): protocol DTOs, messag
   MuxyProtocol.swift           Protocol enums: methods, results, events
   ProtocolParams.swift         Request parameter types for each method
   MuxyMessage.swift            Message envelope (request/response/event) + JSON codec
+  ProjectIconColor.swift       Shared project/tab color palette and deterministic name-to-hex generator
 
 MuxyServer/                    WebSocket server library (macOS only, embedded in Muxy.app)
   MuxyRemoteServer.swift       NWListener-based WebSocket server + delegate protocol + request routing
@@ -62,6 +63,7 @@ Muxy/
     ViewportState.swift       Viewport window computation and line mapping for editor documents
     TerminalSettings.swift    Terminal preference keys and quick-select label layout helpers
     ProjectLifecyclePreferences.swift  Project lifecycle preferences (keep-open-when-no-tabs)
+    ProjectColorGenerationPreferences.swift  Project icon color generation preference key
     Project.swift             Project folder metadata
     Worktree.swift            Per-project worktree slot (primary or git worktree)
     WorktreeKey.swift         Hashable (projectID, worktreeID) key for workspace maps
@@ -114,7 +116,7 @@ Muxy/
     MobileServerService.swift  Lifecycle wrapper around MuxyRemoteServer
     WorktreeStore.swift       @Observable store for per-project worktrees
     WorktreePersistence.swift JSON persistence for worktrees (one file per project)
-    ProjectOpenService.swift  Shared open-project flow used by commands and sidebar
+    ProjectOpenService.swift  Shared open-project flow used by commands and sidebar; applies automatic generated project colors
     WorktreeSetupRunner.swift Dispatches .muxy/worktree.json setup commands to a new tab
     WorkspacePersistence.swift JSON persistence for workspaces
     JSONFilePersistence.swift Shared App Support directory helper
@@ -141,7 +143,7 @@ Muxy/
     MainWindow.swift          Main window layout (sidebar + workspace)
     Sidebar.swift             Narrow icon-strip sidebar (44px), add-project button, project icons
     Sidebar/
-      ProjectRow.swift          Project icon (first letter or emoji logo), tooltip, context menu with logo + color pickers
+      ProjectRow.swift          Project icon (first letter or emoji logo), tooltip, context menu with logo + color pickers and generated color action
       ProjectIconColorPicker.swift  Preset color palette popover for tinting the default letter icon
       WorktreePopover.swift     Worktree picker popover triggered from the active project row
       CreateWorktreeSheet.swift Sheet for creating a new git worktree
@@ -188,7 +190,7 @@ Muxy/
     Settings/
       SettingsView.swift      Settings window layout
       SettingsComponents.swift  Shared section/row primitives used across all tabs
-      AppearanceSettingsView.swift  Theme settings tab
+      AppearanceSettingsView.swift  Theme, project color generation, and VCS display settings tab
       EditorSettingsView.swift  Editor preferences tab (default editor, font)
       TerminalSettingsView.swift  Terminal preferences tab, including quick-select label layout
       KeyboardShortcutsSettingsView.swift  Shortcut config tab
@@ -255,7 +257,9 @@ User action → AppState.dispatch() → WorkspaceReducer.reduce()
   auto-title via `TerminalTab.customTitle` ("Rename Tab" context menu / `⌃⌘R`) and assign a
   color accent via `TerminalTab.colorID` ("Set Tab Color…" context menu). Both fields persist
   to `workspaces.json` through `TerminalTabSnapshot`. Colors resolve through
-  `ProjectIconColor.palette` (shared with project icon colors).
+  `ProjectIconColor.palette` (shared with project icon colors). Project icon colors persist on
+  `Project.iconColor` as either a palette id or `#RRGGBB`; `ProjectIconColor.generatedHex(for:)`
+  provides stable name-based colors for the Appearance setting and project context menu action.
 
 ## File Tree
 

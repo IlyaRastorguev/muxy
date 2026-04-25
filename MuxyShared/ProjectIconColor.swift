@@ -55,4 +55,55 @@ public enum ProjectIconColor {
         let blue = Double(value & 0xFF) / 255.0
         return (red, green, blue)
     }
+
+    public static func generatedHex(for name: String) -> String {
+        let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let seed = normalized.isEmpty ? "project" : normalized
+        let hash = fnv1a64(seed)
+        let hue = Double(hash % 360) / 360.0
+        let saturation = 0.58 + Double((hash >> 9) % 17) / 100.0
+        let lightness = 0.42 + Double((hash >> 17) % 15) / 100.0
+        let rgb = rgbFromHSL(hue: hue, saturation: saturation, lightness: lightness)
+        return String(format: "#%02X%02X%02X", rgb.0, rgb.1, rgb.2)
+    }
+
+    private static func fnv1a64(_ value: String) -> UInt64 {
+        var hash: UInt64 = 0xCBF2_9CE4_8422_2325
+        for byte in value.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 0x100_0000_01B3
+        }
+        return hash
+    }
+
+    private static func rgbFromHSL(
+        hue: Double,
+        saturation: Double,
+        lightness: Double
+    ) -> (Int, Int, Int) {
+        let chroma = (1 - abs(2 * lightness - 1)) * saturation
+        let huePrime = hue * 6
+        let x = chroma * (1 - abs(huePrime.truncatingRemainder(dividingBy: 2) - 1))
+        let match = lightness - chroma / 2
+        let channels: (Double, Double, Double) = switch huePrime {
+        case 0 ..< 1:
+            (chroma, x, 0)
+        case 1 ..< 2:
+            (x, chroma, 0)
+        case 2 ..< 3:
+            (0, chroma, x)
+        case 3 ..< 4:
+            (0, x, chroma)
+        case 4 ..< 5:
+            (x, 0, chroma)
+        default:
+            (chroma, 0, x)
+        }
+
+        return (
+            Int(((channels.0 + match) * 255).rounded()),
+            Int(((channels.1 + match) * 255).rounded()),
+            Int(((channels.2 + match) * 255).rounded())
+        )
+    }
 }

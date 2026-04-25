@@ -8,11 +8,17 @@ extension ProjectIconColor.Swatch {
 
 extension ProjectIconColor {
     static func color(for identifier: String?) -> Color? {
-        swatch(for: identifier)?.color
+        guard let identifier else { return nil }
+        if let swatch = swatch(for: identifier) { return swatch.color }
+        return Color(hex: identifier)
     }
 
     static func foreground(for identifier: String?) -> Color? {
-        swatch(for: identifier)?.foreground
+        guard let identifier else { return nil }
+        if let swatch = swatch(for: identifier) { return swatch.foreground }
+        guard let rgb = rgb(fromHex: identifier) else { return nil }
+        let luminance = 0.2126 * rgb.0 + 0.7152 * rgb.1 + 0.0722 * rgb.2
+        return luminance > 0.6 ? .black : .white
     }
 }
 
