@@ -17,7 +17,9 @@ final class EmojiPickerController {
             defer: false
         )
         textView.onSelect = { [weak self] emoji in
-            self?.onSelect?(emoji)
+            let handler = self?.onSelect
+            self?.onSelect = nil
+            handler?(emoji)
         }
         textView.drawsBackground = false
         textView.isEditable = true
@@ -50,7 +52,7 @@ final class EmojiPickerController {
             window.makeFirstResponder(textView)
             textView.string = ""
             textView.inputContext?.activate()
-            NSApp.activate(ignoringOtherApps: true)
+            if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
             NSApp.orderFrontCharacterPalette(textView)
         }
     }
