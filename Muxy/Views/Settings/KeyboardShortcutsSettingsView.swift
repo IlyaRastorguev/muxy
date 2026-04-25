@@ -1,6 +1,28 @@
 import SwiftUI
 
 struct KeyboardShortcutsSettingsView: View {
+    private enum Section: String, CaseIterable, Identifiable {
+        case app
+        case custom
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .app: "App Shortcuts"
+            case .custom: "Custom Commands"
+            }
+        }
+
+        var searchPlaceholder: String {
+            switch self {
+            case .app: "Search shortcuts"
+            case .custom: "Search commands"
+            }
+        }
+    }
+
+    @State private var section: Section = .app
     @State private var recordingAction: ShortcutAction?
     @State private var recordingCommandPrefix = false
     @State private var recordingCommandShortcutID: UUID?
@@ -14,9 +36,35 @@ struct KeyboardShortcutsSettingsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            sectionPicker
+            Divider()
             header
             Divider()
-            shortcutsList
+            switch section {
+            case .app: appShortcutsList
+            case .custom: customShortcutsList
+            }
+        }
+    }
+
+    private var sectionPicker: some View {
+        Picker("", selection: $section) {
+            ForEach(Section.allCases) { section in
+                Text(section.title).tag(section)
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.segmented)
+        .padding(.horizontal, SettingsMetrics.horizontalPadding)
+        .padding(.vertical, 10)
+        .onChange(of: section) { _, _ in
+            searchText = ""
+            recordingAction = nil
+            recordingCommandPrefix = false
+            recordingCommandShortcutID = nil
+            conflictWarning = nil
+            commandPrefixConflictWarning = nil
+            commandConflictWarning = nil
         }
     }
 
@@ -26,7 +74,7 @@ struct KeyboardShortcutsSettingsView: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
                     .font(.system(size: SettingsMetrics.labelFontSize))
-                TextField("Search shortcuts", text: $searchText)
+                TextField(section.searchPlaceholder, text: $searchText)
                     .textFieldStyle(.plain)
                     .font(.system(size: SettingsMetrics.labelFontSize))
             }
@@ -34,34 +82,35 @@ struct KeyboardShortcutsSettingsView: View {
             .padding(.vertical, 6)
             .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
 
-            Button("Reset All") {
-                store.resetToDefaults()
-                recordingAction = nil
-                recordingCommandPrefix = false
-                recordingCommandShortcutID = nil
+            switch section {
+            case .app:
+                Button("Reset All") {
+                    store.resetToDefaults()
+                    recordingAction = nil
+                    conflictWarning = nil
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: SettingsMetrics.footnoteFontSize))
+                .foregroundStyle(.secondary)
+            case .custom:
+                Button {
+                    searchText = ""
+                    let shortcut = commandStore.addShortcut()
+                    recordingCommandPrefix = false
+                    recordingCommandShortcutID = shortcut.id
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: SettingsMetrics.footnoteFontSize, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .help("Add Command Shortcut")
+                .accessibilityLabel("Add Command Shortcut")
             }
-            .buttonStyle(.plain)
-            .font(.system(size: SettingsMetrics.footnoteFontSize))
-            .foregroundStyle(.secondary)
-
-            Button {
-                searchText = ""
-                let shortcut = commandStore.addShortcut()
-                recordingAction = nil
-                recordingCommandPrefix = false
-                recordingCommandShortcutID = shortcut.id
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: SettingsMetrics.footnoteFontSize, weight: .semibold))
-            }
-            .buttonStyle(.plain)
-            .help("Add Command Shortcut")
-            .accessibilityLabel("Add Command Shortcut")
         }
         .padding(SettingsMetrics.horizontalPadding)
     }
 
-    private var shortcutsList: some View {
+    private var appShortcutsList: some View {
         let visibleCategories = ShortcutAction.categories.filter { !filteredActions(for: $0).isEmpty }
         return ScrollView(.vertical, showsIndicators: true) {
             VStack(spacing: 0) {
@@ -69,13 +118,16 @@ struct KeyboardShortcutsSettingsView: View {
                     categorySection(
                         title: category,
                         actions: filteredActions(for: category),
-                        isLast: category == visibleCategories.last && filteredCommandShortcuts.isEmpty
+                        isLast: category == visibleCategories.last
                     )
                 }
-                if !commandStore.shortcuts.isEmpty || searchText.isEmpty {
-                    commandShortcutsSection
-                }
             }
+        }
+    }
+
+    private var customShortcutsList: some View {
+        ScrollView(.vertical, showsIndicators: true) {
+            commandShortcutsSection
         }
     }
 
