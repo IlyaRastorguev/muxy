@@ -5,8 +5,8 @@ enum AppAppearancePreferences {
     static let blurRadiusKey = "muxy.appearance.blurRadius"
     static let defaultTransparencyLevel: Double = 100
     static let defaultBlurRadius: Double = 0
-    static let transparencyRange: ClosedRange<Double> = 0...100
-    static let blurRadiusRange: ClosedRange<Double> = 0...64
+    static let transparencyRange: ClosedRange<Double> = 0 ... 100
+    static let blurRadiusRange: ClosedRange<Double> = 0 ... 64
 
     static var transparencyLevel: Double {
         clampedTransparencyLevel(UserDefaults.standard.object(forKey: transparencyLevelKey) as? Double ?? defaultTransparencyLevel)
