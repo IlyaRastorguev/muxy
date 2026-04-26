@@ -1020,16 +1020,19 @@ struct CodeEditorView: NSViewRepresentable {
         private var appliedCurrentSearchMatchRange: NSRange?
 
         private func clearAppliedSearchHighlights(layoutManager: NSLayoutManager, storageLength: Int) {
+            let hadCurrentMatchOverride = appliedCurrentSearchMatchRange != nil
             for range in appliedSearchHighlightRanges {
                 guard NSMaxRange(range) <= storageLength else { continue }
                 layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: range)
-                layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: range)
             }
             if let range = appliedCurrentSearchMatchRange, NSMaxRange(range) <= storageLength {
                 layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: range)
             }
             appliedSearchHighlightRanges.removeAll(keepingCapacity: true)
             appliedCurrentSearchMatchRange = nil
+            if hadCurrentMatchOverride {
+                reapplySyntaxHighlights()
+            }
         }
 
         func performSearchViewport(_ needle: String, caseSensitive: Bool, useRegex: Bool) {
@@ -1280,10 +1283,14 @@ struct CodeEditorView: NSViewRepresentable {
                 lastObservedClipSize = size
             }
             updateMarkdownEditorScrollMetrics()
-            if isApplyingMarkdownScroll {
+            if !isMarkdownSplitActive {
+                isApplyingMarkdownScroll = false
+            } else if isApplyingMarkdownScroll {
                 isApplyingMarkdownScroll = false
             } else {
-                state.markdownScrollDriver = .editor
+                if state.markdownScrollDriver != .editor {
+                    state.markdownScrollDriver = .editor
+                }
                 updateMarkdownPreviewSyncPointFromEditorScroll()
             }
             if !isEditingViewport {
@@ -1307,10 +1314,12 @@ struct CodeEditorView: NSViewRepresentable {
             }
         }
 
+        private var isMarkdownSplitActive: Bool {
+            state.isMarkdownFile && state.markdownViewMode == .split && state.markdownScrollSyncEnabled
+        }
+
         func updateMarkdownEditorScrollMetrics() {
-            guard state.isMarkdownFile,
-                  state.markdownViewMode == .split,
-                  state.markdownScrollSyncEnabled,
+            guard isMarkdownSplitActive,
                   let scrollView,
                   let viewport = viewportState
             else { return }

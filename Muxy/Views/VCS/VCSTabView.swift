@@ -15,6 +15,7 @@ struct VCSTabView: View {
     @State private var showCreatePRSheet = false
     @State private var showWorktreePopover = false
     @State private var pendingClosePR: GitRepositoryService.PRInfo?
+    @State private var pendingCheckoutPR: GitRepositoryService.PRListItem?
     private var commitEnabled: Bool {
         state.hasStagedChanges && !state.commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -83,6 +84,11 @@ struct VCSTabView: View {
             pendingClosePR = nil
             presentClosePRConfirmation(prInfo: prInfo)
         }
+        .onChange(of: pendingCheckoutPR?.number) { _, number in
+            guard number != nil, let pr = pendingCheckoutPR else { return }
+            pendingCheckoutPR = nil
+            presentCheckoutPRConfirmation(pr: pr)
+        }
         .alert(
             "Error",
             isPresented: Binding(
@@ -121,8 +127,16 @@ struct VCSTabView: View {
 
             Spacer(minLength: 0)
 
-            IconButton(symbol: "arrow.clockwise", accessibilityLabel: "Refresh") {
-                state.refresh()
+            VCSSectionVisibilityMenu(state: state)
+
+            if state.isRefreshingPullRequest {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 24, height: 24)
+            } else {
+                IconButton(symbol: "arrow.clockwise", accessibilityLabel: "Refresh") {
+                    state.refresh()
+                }
             }
         }
         .padding(.horizontal, 8)
@@ -431,6 +445,7 @@ struct VCSTabView: View {
                     onFocus: onFocus,
                     showDiscardAllConfirmation: $showDiscardAllConfirmation,
                     pendingDiscardPath: $pendingDiscardPath,
+                    pendingCheckoutPR: $pendingCheckoutPR,
                     onOpenInEditor: openFileInEditor,
                     onOpenDiff: openDiffInTab
                 )
@@ -455,7 +470,7 @@ struct VCSTabView: View {
                     .scrollContentBackground(.hidden)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 9)
-                    .frame(minHeight: 54, maxHeight: 100)
+                    .frame(minHeight: 27, maxHeight: 50)
                     .onKeyPress(.return, phases: .down) { keyPress in
                         if keyPress.modifiers.contains(.command) {
                             state.commit()
@@ -651,6 +666,33 @@ struct VCSTabView: View {
         }
     }
 
+    private func presentCheckoutPRConfirmation(pr: GitRepositoryService.PRListItem) {
+        let isDirty = !state.files.isEmpty
+        guard isDirty else {
+            state.checkoutPullRequest(pr)
+            return
+        }
+        guard let window = NSApp.keyWindow ?? NSApp.mainWindow,
+              window.attachedSheet == nil
+        else { return }
+
+        let alert = NSAlert()
+        alert.messageText = "Checkout PR #\(pr.number)?"
+        alert.informativeText = "You have uncommitted changes. Switching branches may fail or move them. Continue?"
+        alert.alertStyle = .warning
+        alert.icon = NSApp.applicationIconImage
+        alert.addButton(withTitle: "Checkout")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons.first?.keyEquivalent = "\r"
+        alert.buttons.last?.keyEquivalent = "\u{1b}"
+
+        alert.beginSheetModal(for: window) { response in
+            if response == .alertFirstButtonReturn {
+                state.checkoutPullRequest(pr)
+            }
+        }
+    }
+
     private func openFileInEditor(_ relativePath: String) {
         guard let projectID = appState.activeProjectID else { return }
         let fullPath = state.projectPath.hasSuffix("/")
@@ -665,6 +707,52 @@ struct VCSTabView: View {
     }
 }
 
+struct VCSSectionVisibilityMenu: View {
+    @Bindable var state: VCSTabState
+    @State private var hovered = false
+
+    private struct Row: Identifiable {
+        let id: String
+        let visible: Bool
+        let toggle: () -> Void
+        var title: String { id }
+    }
+
+    private var rows: [Row] {
+        [
+            Row(id: "Changes", visible: state.changesVisible) { state.setChangesVisible(!state.changesVisible) },
+            Row(id: "Pull Requests", visible: state.pullRequestsVisible) { state.setPullRequestsVisible(!state.pullRequestsVisible) },
+            Row(id: "History", visible: state.historyVisible) { state.setHistoryVisible(!state.historyVisible) },
+        ]
+    }
+
+    var body: some View {
+        Menu {
+            ForEach(rows) { row in
+                Button(action: row.toggle) {
+                    if row.visible {
+                        Label(row.title, systemImage: "checkmark")
+                    } else {
+                        Text(row.title)
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "sidebar.squares.left")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(hovered ? MuxyTheme.fg : MuxyTheme.fgMuted)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .onHover { hovered = $0 }
+        .accessibilityLabel("Show/Hide Sections")
+        .help("Show/Hide sections")
+    }
+}
+
 struct PRPill: View {
     @Bindable var state: VCSTabState
     let onRequestCreate: () -> Void
@@ -674,15 +762,37 @@ struct PRPill: View {
     @State private var showPRPopover = false
 
     var body: some View {
-        switch state.prLaunchState {
-        case .hidden:
+        if !state.hasFetchedPullRequestInfo {
             EmptyView()
-        case .ghMissing:
-            ghMissingPill
-        case .canCreate:
-            createPRPill
-        case let .hasPR(info):
-            hasPRPill(info: info)
+        } else {
+            switch state.prLaunchState {
+            case .hidden:
+                openRepoButton
+            case .ghMissing:
+                HStack(spacing: 4) {
+                    ghMissingPill
+                    openRepoButton
+                }
+            case .canCreate:
+                createPRPill
+            case let .hasPR(info):
+                hasPRPill(info: info)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var openRepoButton: some View {
+        if let url = state.remoteWebURL {
+            pillContainer(
+                icon: "globe",
+                text: "Open Repo",
+                tint: MuxyTheme.fg.opacity(0.85),
+                disabled: false
+            ) {
+                NSWorkspace.shared.open(url)
+            }
+            .help("Open repository on web")
         }
     }
 
@@ -697,14 +807,49 @@ struct PRPill: View {
     }
 
     private var createPRPill: some View {
-        pillContainer(
-            icon: "arrow.triangle.pull",
-            text: "Create PR",
-            tint: MuxyTheme.accent,
-            disabled: state.isOpeningPullRequest,
-            action: onRequestCreate
-        )
-        .help("Create a pull request")
+        HStack(spacing: 0) {
+            Button(action: onRequestCreate) {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.triangle.pull")
+                        .font(.system(size: 9, weight: .bold))
+                    Text("Create PR")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .foregroundStyle(MuxyTheme.accent)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(state.isOpeningPullRequest)
+            .help("Create a pull request")
+
+            if state.remoteWebURL != nil {
+                Rectangle()
+                    .fill(MuxyTheme.accent.opacity(0.35))
+                    .frame(width: 1, height: 14)
+                Menu {
+                    if let url = state.remoteWebURL {
+                        Button("Open Repository on Web") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(MuxyTheme.accent)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 5)
+                        .contentShape(Rectangle())
+                }
+                .menuStyle(.button)
+                .menuIndicator(.hidden)
+                .buttonStyle(.plain)
+                .fixedSize()
+            }
+        }
+        .background(MuxyTheme.surface, in: RoundedRectangle(cornerRadius: 5))
+        .overlay(RoundedRectangle(cornerRadius: 5).stroke(MuxyTheme.accent.opacity(0.35), lineWidth: 1))
     }
 
     private func hasPRPill(info: GitRepositoryService.PRInfo) -> some View {
@@ -1098,6 +1243,7 @@ private struct SectionSplitLayout: View {
     let onFocus: () -> Void
     @Binding var showDiscardAllConfirmation: Bool
     @Binding var pendingDiscardPath: String?
+    @Binding var pendingCheckoutPR: GitRepositoryService.PRListItem?
     let onOpenInEditor: (String) -> Void
     let onOpenDiff: (String, Bool) -> Void
 
@@ -1108,8 +1254,9 @@ private struct SectionSplitLayout: View {
     private var sections: [SectionKind] {
         var result: [SectionKind] = []
         if hasStaged { result.append(.staged) }
-        result.append(.changes)
-        result.append(.history)
+        if state.changesVisible { result.append(.changes) }
+        if state.pullRequestsVisible { result.append(.pullRequests) }
+        if state.historyVisible { result.append(.history) }
         return result
     }
 
@@ -1118,6 +1265,7 @@ private struct SectionSplitLayout: View {
         case .staged: state.stagedCollapsed
         case .changes: state.changesCollapsed
         case .history: state.historyCollapsed
+        case .pullRequests: state.pullRequestsCollapsed
         }
     }
 
@@ -1130,6 +1278,8 @@ private struct SectionSplitLayout: View {
             if !state.historyCollapsed, state.commits.isEmpty {
                 state.loadCommits()
             }
+        case .pullRequests:
+            state.pullRequestsCollapsed.toggle()
         }
     }
 
@@ -1226,6 +1376,11 @@ private struct SectionSplitLayout: View {
                                 else { return }
 
                                 var ratios = state.sectionRatios
+                                if ratios.count < allSections.count {
+                                    let fill = 1.0 / CGFloat(allSections.count)
+                                    ratios.append(contentsOf: Array(repeating: fill, count: allSections.count - ratios.count))
+                                }
+                                guard aboveIdx < ratios.count, belowIdx < ratios.count else { return }
                                 let minRatio: CGFloat = 0.08
 
                                 ratios[aboveIdx] += delta
@@ -1292,6 +1447,16 @@ private struct SectionSplitLayout: View {
                 CommitHistoryView(state: state)
             }
             .frame(height: height)
+
+        case .pullRequests:
+            VStack(spacing: 0) {
+                sectionHeader(for: .pullRequests, collapsed: false)
+                PullRequestsListView(
+                    state: state,
+                    onCheckout: { pr in pendingCheckoutPR = pr }
+                )
+            }
+            .frame(height: height)
         }
     }
 
@@ -1336,6 +1501,7 @@ private struct SectionSplitLayout: View {
         case .staged: state.stagedFiles.count
         case .changes: state.unstagedFiles.count
         case .history: state.commits.count
+        case .pullRequests: state.filteredPullRequests.count
         }
     }
 
@@ -1368,6 +1534,17 @@ private struct SectionSplitLayout: View {
                 state.loadCommits()
             }
             .help("Refresh history")
+
+        case .pullRequests:
+            PullRequestsAutoSyncMenu(state: state)
+            if state.isLoadingPullRequests {
+                ProgressView().controlSize(.mini)
+            } else {
+                IconButton(symbol: "arrow.clockwise", size: 11, accessibilityLabel: "Sync Pull Requests") {
+                    state.loadPullRequests()
+                }
+                .help("Sync pull requests")
+            }
         }
     }
 
@@ -1449,12 +1626,14 @@ private enum SectionKind: Hashable {
     case staged
     case changes
     case history
+    case pullRequests
 
     var title: String {
         switch self {
         case .staged: "Staged Changes"
         case .changes: "Changes"
         case .history: "History"
+        case .pullRequests: "Pull Requests"
         }
     }
 }
