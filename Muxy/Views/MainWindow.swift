@@ -146,7 +146,7 @@ struct MainWindow: View {
                             state: treeState,
                             onOpenFile: { filePath in
                                 guard let projectID = appState.activeProjectID else { return }
-                                appState.openFile(filePath, projectID: projectID)
+                                appState.openFile(filePath, projectID: projectID, preserveFocus: true)
                             },
                             onOpenTerminal: { directory in
                                 guard let projectID = appState.activeProjectID else { return }
@@ -611,7 +611,10 @@ struct MainWindow: View {
 
     private func toggleFileTreePanel() {
         guard let project = activeProject else {
-            fileTreePanelVisible = false
+            if fileTreePanelVisible {
+                fileTreePanelVisible = false
+                NotificationCenter.default.post(name: .refocusActiveTerminal, object: nil)
+            }
             return
         }
 
@@ -620,6 +623,8 @@ struct MainWindow: View {
         fileTreePanelVisible = isShowing
         if isShowing {
             vcsPanelVisible = false
+        } else {
+            NotificationCenter.default.post(name: .refocusActiveTerminal, object: nil)
         }
     }
 
