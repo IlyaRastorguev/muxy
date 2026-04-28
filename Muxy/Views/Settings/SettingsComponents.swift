@@ -1,4 +1,4 @@
-@preconcurrency import AppKit
+import AppKit
 import SwiftUI
 
 enum SettingsMetrics {
@@ -133,82 +133,16 @@ extension View {
 }
 
 private struct SettingsFocusResetView: NSViewRepresentable {
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
+    func makeNSView(context: Context) -> SettingsFocusResetNSView {
+        SettingsFocusResetNSView()
     }
 
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        context.coordinator.view = view
-        context.coordinator.start()
-        return view
-    }
+    func updateNSView(_ nsView: SettingsFocusResetNSView, context: Context) {}
+}
 
-    func updateNSView(_ nsView: NSView, context: Context) {
-        context.coordinator.view = nsView
-        context.coordinator.start()
-    }
-
-    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
-        coordinator.stop()
-    }
-
-    final class Coordinator: @unchecked Sendable {
-        weak var view: NSView?
-        private var monitor: Any?
-
-        func start() {
-            guard monitor == nil else { return }
-            monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
-                let mouseDown = MouseDownEvent(
-                    view: self?.view,
-                    window: event.window,
-                    location: event.locationInWindow
-                )
-                MainActor.assumeIsolated {
-                    SettingsFocusResetView.resetFocusIfNeeded(for: mouseDown)
-                }
-                return event
-            }
-        }
-
-        func stop() {
-            guard let monitor else { return }
-            NSEvent.removeMonitor(monitor)
-            self.monitor = nil
-        }
-    }
-
-    @MainActor
-    private static func resetFocusIfNeeded(for mouseDown: MouseDownEvent) {
-        guard let view = mouseDown.view,
-              let window = view.window,
-              mouseDown.window === window,
-              let contentView = window.contentView
-        else {
-            return
-        }
-
-        let contentLocation = contentView.convert(mouseDown.location, from: nil)
-        guard !isInputView(contentView.hitTest(contentLocation)) else { return }
-        window.makeFirstResponder(nil)
-    }
-
-    @MainActor
-    private static func isInputView(_ view: NSView?) -> Bool {
-        var currentView = view
-        while let view = currentView {
-            if view is NSTextField || view is NSTextView || view is ShortcutRecorderNSView {
-                return true
-            }
-            currentView = view.superview
-        }
-        return false
-    }
-
-    private struct MouseDownEvent: @unchecked Sendable {
-        weak var view: NSView?
-        weak var window: NSWindow?
-        let location: NSPoint
+private final class SettingsFocusResetNSView: NSView {
+    override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(nil)
+        super.mouseDown(with: event)
     }
 }

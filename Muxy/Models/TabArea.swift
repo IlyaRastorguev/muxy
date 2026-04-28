@@ -70,7 +70,8 @@ final class TabArea: Identifiable {
         let pane = TerminalPaneState(
             projectPath: projectPath,
             title: title.isEmpty ? Self.commandTitle(trimmedCommand) : title,
-            startupCommand: trimmedCommand
+            startupCommand: trimmedCommand,
+            startupCommandInteractive: true
         )
         insertTab(TerminalTab(pane: pane))
     }

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct KeyboardShortcutsSettingsView: View {
-    private enum Section: String, CaseIterable, Identifiable {
+    private enum ListSection: String, CaseIterable, Identifiable {
         case app
         case custom
 
@@ -22,7 +22,7 @@ struct KeyboardShortcutsSettingsView: View {
         }
     }
 
-    @State private var section: Section = .app
+    @State private var section: ListSection = .app
     @State private var recordingAction: ShortcutAction?
     @State private var recordingCommandPrefix = false
     @State private var recordingCommandShortcutID: UUID?
@@ -52,7 +52,7 @@ struct KeyboardShortcutsSettingsView: View {
 
     private var sectionPicker: some View {
         Picker("", selection: $section) {
-            ForEach(Section.allCases) { section in
+            ForEach(ListSection.allCases) { section in
                 Text(section.title).tag(section)
             }
         }

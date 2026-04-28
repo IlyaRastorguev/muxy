@@ -912,15 +912,16 @@ private final class ShortcutInterceptingView: NSView {
         else { return super.performKeyEquivalent(with: event) }
 
         let scopes = ShortcutContext.activeScopes(for: window)
+        let layerWasActive = CommandShortcutStore.shared.isLayerActive
         if let shortcut = CommandShortcutStore.shared.shortcut(for: event, scopes: scopes) {
             CommandShortcutStore.shared.deactivateLayer()
-            if onCommandShortcut?(shortcut) == true {
-                return true
-            }
+            _ = onCommandShortcut?(shortcut)
+            return true
         }
 
-        if CommandShortcutStore.shared.isLayerActive {
+        if layerWasActive {
             CommandShortcutStore.shared.deactivateLayer()
+            return true
         }
 
         if CommandShortcutStore.shared.matchesPrefix(event: event, scopes: scopes) {
