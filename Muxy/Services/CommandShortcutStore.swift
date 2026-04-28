@@ -36,7 +36,7 @@ struct CommandShortcutConfiguration: Equatable {
     var shortcuts: [CommandShortcut]
 
     init(
-        prefixCombo: KeyCombo = KeyCombo(key: "k", command: true),
+        prefixCombo: KeyCombo = KeyCombo(key: "g", command: true),
         shortcuts: [CommandShortcut] = []
     ) {
         self.prefixCombo = prefixCombo
@@ -93,7 +93,6 @@ final class CommandShortcutStore {
 
     func addShortcut() -> CommandShortcut {
         var shortcut = CommandShortcut()
-        shortcut.combo = availableDefaultCombo()
         shortcuts.append(shortcut)
         save()
         return shortcut
@@ -101,7 +100,7 @@ final class CommandShortcutStore {
 
     func updateShortcut(_ shortcut: CommandShortcut) {
         guard let index = shortcuts.firstIndex(where: { $0.id == shortcut.id }) else { return }
-        shortcuts[index] = shortcut
+        shortcuts[index] = shortcutWithDefaultModifier(shortcut)
         save()
     }
 
@@ -110,9 +109,19 @@ final class CommandShortcutStore {
         save()
     }
 
+    func deleteAllShortcuts() {
+        guard !shortcuts.isEmpty else { return }
+        shortcuts = []
+        save()
+    }
+
     func updatePrefixCombo(_ combo: KeyCombo) {
         prefixCombo = combo
         save()
+    }
+
+    func resetPrefixCombo() {
+        updatePrefixCombo(CommandShortcutConfiguration().prefixCombo)
     }
 
     func activateLayer() {
@@ -159,32 +168,26 @@ final class CommandShortcutStore {
     }
 
     func conflictingShortcut(for combo: KeyCombo, excluding id: UUID) -> CommandShortcut? {
-        shortcuts.first { $0.combo == combo && $0.id != id }
+        let normalizedCombo = comboWithDefaultModifier(combo)
+        return shortcuts.first { $0.combo == normalizedCombo && $0.id != id }
     }
 
-    private func availableDefaultCombo() -> KeyCombo {
-        let candidates = [
-            KeyCombo(key: "t"),
-            KeyCombo(key: "1"),
-            KeyCombo(key: "2"),
-            KeyCombo(key: "3"),
-            KeyCombo(key: "4"),
-            KeyCombo(key: "5"),
-            KeyCombo(key: "6"),
-            KeyCombo(key: "7"),
-            KeyCombo(key: "8"),
-            KeyCombo(key: "9"),
-        ]
-        return candidates.first { candidate in
-            conflictingShortcut(for: candidate, excluding: UUID()) == nil
-        } ?? KeyCombo(key: "t")
+    private func shortcutWithDefaultModifier(_ shortcut: CommandShortcut) -> CommandShortcut {
+        var shortcut = shortcut
+        shortcut.combo = comboWithDefaultModifier(shortcut.combo)
+        return shortcut
+    }
+
+    private func comboWithDefaultModifier(_ combo: KeyCombo) -> KeyCombo {
+        guard combo.nsModifierFlags.isEmpty else { return combo }
+        return KeyCombo(key: combo.key, command: true)
     }
 
     private func load() {
         do {
             let configuration = try persistence.loadConfiguration()
             prefixCombo = configuration.prefixCombo
-            shortcuts = configuration.shortcuts
+            shortcuts = configuration.shortcuts.map(shortcutWithDefaultModifier)
         } catch {
             commandShortcutLogger.error("Failed to load command shortcuts: \(error.localizedDescription)")
             prefixCombo = CommandShortcutConfiguration().prefixCombo

@@ -6,6 +6,11 @@ import Testing
 @Suite("CommandShortcutStore")
 @MainActor
 struct CommandShortcutStoreTests {
+    @Test("default prefix combo is command g")
+    func defaultPrefixCombo() {
+        #expect(CommandShortcutConfiguration().prefixCombo == KeyCombo(key: "g", command: true))
+    }
+
     @Test("addShortcut persists command shortcut")
     func addShortcut() {
         let persistence = InMemoryCommandShortcutPersistence()
@@ -32,6 +37,30 @@ struct CommandShortcutStoreTests {
         #expect(persistence.savedConfiguration?.shortcuts == [updated])
     }
 
+    @Test("updateShortcut adds command modifier when combo has no modifiers")
+    func updateShortcutAddsCommandModifier() {
+        var shortcut = CommandShortcut(name: "Server", command: "npm run dev")
+        shortcut.combo = KeyCombo(key: "s", modifiers: 0)
+        let persistence = InMemoryCommandShortcutPersistence(shortcuts: [shortcut])
+        let store = CommandShortcutStore(persistence: persistence)
+
+        store.updateShortcut(shortcut)
+
+        #expect(store.shortcuts.first?.combo == KeyCombo(key: "s", command: true))
+        #expect(persistence.savedConfiguration?.shortcuts.first?.combo == KeyCombo(key: "s", command: true))
+    }
+
+    @Test("conflictingShortcut compares combos after default modifier is applied")
+    func conflictingShortcutAppliesDefaultModifier() {
+        let shortcut = CommandShortcut(name: "Server", command: "npm run dev", combo: KeyCombo(key: "s", command: true))
+        let persistence = InMemoryCommandShortcutPersistence(shortcuts: [shortcut])
+        let store = CommandShortcutStore(persistence: persistence)
+
+        let conflict = store.conflictingShortcut(for: KeyCombo(key: "s", modifiers: 0), excluding: UUID())
+
+        #expect(conflict == shortcut)
+    }
+
     @Test("deleteShortcut removes shortcut")
     func deleteShortcut() {
         let shortcut = CommandShortcut(name: "Server", command: "npm run dev")
@@ -44,6 +73,24 @@ struct CommandShortcutStoreTests {
         #expect(persistence.savedConfiguration?.shortcuts.isEmpty == true)
     }
 
+    @Test("deleteAllShortcuts removes all command shortcuts")
+    func deleteAllShortcuts() {
+        let prefix = KeyCombo(key: "j", command: true, shift: true)
+        let persistence = InMemoryCommandShortcutPersistence(
+            prefixCombo: prefix,
+            shortcuts: [
+                CommandShortcut(name: "Server", command: "npm run dev"),
+                CommandShortcut(name: "Tests", command: "swift test"),
+            ]
+        )
+        let store = CommandShortcutStore(persistence: persistence)
+
+        store.deleteAllShortcuts()
+
+        #expect(store.shortcuts.isEmpty)
+        #expect(persistence.savedConfiguration == CommandShortcutConfiguration(prefixCombo: prefix))
+    }
+
     @Test("updatePrefixCombo persists layer shortcut")
     func updatePrefixCombo() {
         let prefix = KeyCombo(key: "j", command: true, shift: true)
@@ -54,6 +101,22 @@ struct CommandShortcutStoreTests {
 
         #expect(store.prefixCombo == prefix)
         #expect(persistence.savedConfiguration?.prefixCombo == prefix)
+    }
+
+    @Test("resetPrefixCombo restores default layer shortcut")
+    func resetPrefixCombo() {
+        let prefix = KeyCombo(key: "j", command: true, shift: true)
+        let shortcut = CommandShortcut(name: "Server", command: "npm run dev")
+        let persistence = InMemoryCommandShortcutPersistence(prefixCombo: prefix, shortcuts: [shortcut])
+        let store = CommandShortcutStore(persistence: persistence)
+
+        store.resetPrefixCombo()
+
+        #expect(store.prefixCombo == CommandShortcutConfiguration().prefixCombo)
+        #expect(persistence.savedConfiguration == CommandShortcutConfiguration(
+            prefixCombo: CommandShortcutConfiguration().prefixCombo,
+            shortcuts: [shortcut]
+        ))
     }
 }
 

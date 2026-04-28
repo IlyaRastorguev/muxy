@@ -26,10 +26,13 @@ struct KeyboardShortcutsSettingsView: View {
     @State private var recordingAction: ShortcutAction?
     @State private var recordingCommandPrefix = false
     @State private var recordingCommandShortcutID: UUID?
+    @State private var pendingCommandShortcutID: UUID?
     @State private var searchText = ""
     @State private var conflictWarning: (action: ShortcutAction, existing: ShortcutAction)?
     @State private var commandPrefixConflictWarning: String?
     @State private var commandConflictWarning: (id: UUID, message: String)?
+    @State private var deleteAllCommandShortcutsSecondsRemaining = 0
+    @State private var deleteAllCommandShortcutsTask: Task<Void, Never>?
 
     private var store: KeyBindingStore { KeyBindingStore.shared }
     private var commandStore: CommandShortcutStore { CommandShortcutStore.shared }
@@ -58,6 +61,7 @@ struct KeyboardShortcutsSettingsView: View {
         .padding(.horizontal, SettingsMetrics.horizontalPadding)
         .padding(.vertical, 10)
         .onChange(of: section) { _, _ in
+            discardPendingCommandShortcut()
             searchText = ""
             recordingAction = nil
             recordingCommandPrefix = false
@@ -65,6 +69,7 @@ struct KeyboardShortcutsSettingsView: View {
             conflictWarning = nil
             commandPrefixConflictWarning = nil
             commandConflictWarning = nil
+            cancelDeleteAllCommandShortcutsConfirmation()
         }
     }
 
@@ -95,7 +100,9 @@ struct KeyboardShortcutsSettingsView: View {
             case .custom:
                 Button {
                     searchText = ""
+                    discardPendingCommandShortcut()
                     let shortcut = commandStore.addShortcut()
+                    pendingCommandShortcutID = shortcut.id
                     recordingCommandPrefix = false
                     recordingCommandShortcutID = shortcut.id
                 } label: {
@@ -139,7 +146,9 @@ struct KeyboardShortcutsSettingsView: View {
                     combo: store.combo(for: action),
                     isRecording: recordingAction == action,
                     conflictAction: conflictWarning?.action == action ? conflictWarning?.existing : nil,
-                    onStartRecording: { recordingAction = action
+                    onStartRecording: {
+                        discardPendingCommandShortcut()
+                        recordingAction = action
                         recordingCommandPrefix = false
                         recordingCommandShortcutID = nil
                         conflictWarning = nil
@@ -191,6 +200,7 @@ struct KeyboardShortcutsSettingsView: View {
                 isRecording: recordingCommandPrefix,
                 conflictMessage: commandPrefixConflictWarning,
                 onStartRecording: {
+                    discardPendingCommandShortcut()
                     recordingAction = nil
                     recordingCommandPrefix = true
                     recordingCommandShortcutID = nil
@@ -199,6 +209,11 @@ struct KeyboardShortcutsSettingsView: View {
                 },
                 onRecord: handleRecord(prefixCombo:),
                 onCancel: {
+                    recordingCommandPrefix = false
+                    commandPrefixConflictWarning = nil
+                },
+                onReset: {
+                    commandStore.resetPrefixCombo()
                     recordingCommandPrefix = false
                     commandPrefixConflictWarning = nil
                 }
@@ -211,6 +226,9 @@ struct KeyboardShortcutsSettingsView: View {
                     isRecording: recordingCommandShortcutID == shortcut.id,
                     conflictMessage: commandConflictWarning?.id == shortcut.id ? commandConflictWarning?.message : nil,
                     onStartRecording: {
+                        if pendingCommandShortcutID != shortcut.id {
+                            discardPendingCommandShortcut()
+                        }
                         recordingAction = nil
                         recordingCommandPrefix = false
                         recordingCommandShortcutID = shortcut.id
@@ -218,13 +236,15 @@ struct KeyboardShortcutsSettingsView: View {
                     },
                     onRecord: { combo in handleRecord(shortcutID: shortcut.id, combo: combo) },
                     onCancel: {
-                        recordingCommandShortcutID = nil
-                        commandConflictWarning = nil
+                        cancelCommandShortcutRecording(shortcutID: shortcut.id)
                     },
                     onDelete: {
                         commandStore.deleteShortcut(id: shortcut.id)
                         if recordingCommandShortcutID == shortcut.id {
                             recordingCommandShortcutID = nil
+                        }
+                        if pendingCommandShortcutID == shortcut.id {
+                            pendingCommandShortcutID = nil
                         }
                         if commandConflictWarning?.id == shortcut.id {
                             commandConflictWarning = nil
@@ -232,6 +252,17 @@ struct KeyboardShortcutsSettingsView: View {
                     }
                 )
             }
+
+            if !commandStore.shortcuts.isEmpty {
+                DeleteAllCommandShortcutsRow(
+                    secondsRemaining: deleteAllCommandShortcutsSecondsRemaining,
+                    action: handleDeleteAllCommandShortcuts
+                )
+            }
+        }
+        .onDisappear {
+            discardPendingCommandShortcut()
+            cancelDeleteAllCommandShortcutsConfirmation()
         }
     }
 
@@ -259,8 +290,32 @@ struct KeyboardShortcutsSettingsView: View {
         guard var shortcut = commandStore.shortcuts.first(where: { $0.id == shortcutID }) else { return }
         shortcut.combo = combo
         commandStore.updateShortcut(shortcut)
+        if pendingCommandShortcutID == shortcutID {
+            pendingCommandShortcutID = nil
+        }
         recordingCommandShortcutID = nil
         commandConflictWarning = nil
+    }
+
+    private func cancelCommandShortcutRecording(shortcutID: UUID) {
+        if pendingCommandShortcutID == shortcutID {
+            commandStore.deleteShortcut(id: shortcutID)
+            pendingCommandShortcutID = nil
+        }
+        recordingCommandShortcutID = nil
+        commandConflictWarning = nil
+    }
+
+    private func discardPendingCommandShortcut() {
+        guard let shortcutID = pendingCommandShortcutID else { return }
+        commandStore.deleteShortcut(id: shortcutID)
+        pendingCommandShortcutID = nil
+        if recordingCommandShortcutID == shortcutID {
+            recordingCommandShortcutID = nil
+        }
+        if commandConflictWarning?.id == shortcutID {
+            commandConflictWarning = nil
+        }
     }
 
     private func binding(for shortcut: CommandShortcut) -> Binding<CommandShortcut> {
@@ -269,6 +324,41 @@ struct KeyboardShortcutsSettingsView: View {
         } set: { updated in
             commandStore.updateShortcut(updated)
         }
+    }
+
+    private func handleDeleteAllCommandShortcuts() {
+        guard deleteAllCommandShortcutsSecondsRemaining == 0 else {
+            commandStore.deleteAllShortcuts()
+            pendingCommandShortcutID = nil
+            recordingCommandShortcutID = nil
+            commandConflictWarning = nil
+            cancelDeleteAllCommandShortcutsConfirmation()
+            return
+        }
+
+        startDeleteAllCommandShortcutsConfirmation()
+    }
+
+    private func startDeleteAllCommandShortcutsConfirmation() {
+        deleteAllCommandShortcutsTask?.cancel()
+        deleteAllCommandShortcutsTask = Task { @MainActor in
+            for seconds in stride(from: 5, through: 1, by: -1) {
+                deleteAllCommandShortcutsSecondsRemaining = seconds
+                do {
+                    try await Task.sleep(for: .seconds(1))
+                } catch {
+                    return
+                }
+            }
+            deleteAllCommandShortcutsSecondsRemaining = 0
+            deleteAllCommandShortcutsTask = nil
+        }
+    }
+
+    private func cancelDeleteAllCommandShortcutsConfirmation() {
+        deleteAllCommandShortcutsTask?.cancel()
+        deleteAllCommandShortcutsTask = nil
+        deleteAllCommandShortcutsSecondsRemaining = 0
     }
 }
 
@@ -356,6 +446,7 @@ private struct CommandPrefixRow: View {
     let onStartRecording: () -> Void
     let onRecord: (KeyCombo) -> Void
     let onCancel: () -> Void
+    let onReset: () -> Void
     @State private var hovered = false
 
     var body: some View {
@@ -385,15 +476,27 @@ private struct CommandPrefixRow: View {
     }
 
     private var comboDisplay: some View {
-        Button(action: onStartRecording) {
-            Text(combo.displayString)
-                .font(.system(size: SettingsMetrics.footnoteFontSize, weight: .medium, design: .rounded))
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 5))
+        HStack(spacing: 6) {
+            if hovered {
+                Button(action: onReset) {
+                    Image(systemName: "arrow.counterclockwise")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Reset Shortcut")
+            }
+
+            Button(action: onStartRecording) {
+                Text(combo.displayString)
+                    .font(.system(size: SettingsMetrics.footnoteFontSize, weight: .medium, design: .rounded))
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 5))
+            }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
     }
 
     private var recordingView: some View {
@@ -507,5 +610,44 @@ private struct CommandShortcutRow: View {
                 .padding(.vertical, 4)
                 .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
         }
+    }
+}
+
+private struct DeleteAllCommandShortcutsRow: View {
+    let secondsRemaining: Int
+    let action: () -> Void
+
+    private var isConfirming: Bool {
+        secondsRemaining > 0
+    }
+
+    var body: some View {
+        HStack {
+            Spacer()
+
+            Button(action: action) {
+                Text(title)
+                    .font(.system(size: SettingsMetrics.footnoteFontSize, weight: .medium))
+                    .foregroundStyle(isConfirming ? MuxyTheme.diffRemoveFg : .secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(backgroundStyle, in: RoundedRectangle(cornerRadius: 5))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(title)
+        }
+        .padding(.horizontal, SettingsMetrics.horizontalPadding)
+        .padding(.vertical, SettingsMetrics.rowVerticalPadding)
+    }
+
+    private var title: String {
+        if isConfirming {
+            return "Confirm Delete All (\(secondsRemaining))"
+        }
+        return "Delete All"
+    }
+
+    private var backgroundStyle: AnyShapeStyle {
+        isConfirming ? AnyShapeStyle(MuxyTheme.diffRemoveBg) : AnyShapeStyle(.quaternary)
     }
 }
