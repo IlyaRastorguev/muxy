@@ -207,11 +207,18 @@ struct MuxyCommands: Commands {
             }
             .shortcut(for: .newTab, store: keyBindings)
 
-            ForEach(commandShortcuts.shortcuts) { shortcut in
-                Button(shortcut.displayName) {
-                    performCommandShortcut(shortcut)
+            Menu("Custom Commands") {
+                if commandShortcuts.shortcuts.isEmpty {
+                    Button("No Custom Commands") {}
+                        .disabled(true)
+                } else {
+                    ForEach(commandShortcuts.shortcuts) { shortcut in
+                        Button(shortcut.displayName) {
+                            performCommandShortcut(shortcut)
+                        }
+                        .disabled(shortcut.trimmedCommand.isEmpty)
+                    }
                 }
-                .disabled(shortcut.trimmedCommand.isEmpty)
             }
 
             Button("Source Control") {

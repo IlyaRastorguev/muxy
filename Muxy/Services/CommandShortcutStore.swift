@@ -85,6 +85,7 @@ final class CommandShortcutStore {
     private(set) var isLayerActive = false
     private let persistence: any CommandShortcutPersisting
     @ObservationIgnored private var layerResetTask: Task<Void, Never>?
+    private static let layerTimeout: Duration = .seconds(2)
 
     init(persistence: any CommandShortcutPersisting = FileCommandShortcutPersistence()) {
         self.persistence = persistence
@@ -92,7 +93,7 @@ final class CommandShortcutStore {
     }
 
     func addShortcut() -> CommandShortcut {
-        var shortcut = CommandShortcut()
+        let shortcut = CommandShortcut()
         shortcuts.append(shortcut)
         save()
         return shortcut
@@ -128,7 +129,7 @@ final class CommandShortcutStore {
         isLayerActive = true
         layerResetTask?.cancel()
         layerResetTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(2))
+            try? await Task.sleep(for: Self.layerTimeout)
             self?.deactivateLayer()
         }
     }

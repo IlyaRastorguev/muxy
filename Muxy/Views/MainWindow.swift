@@ -921,7 +921,6 @@ private final class ShortcutInterceptingView: NSView {
 
         if CommandShortcutStore.shared.isLayerActive {
             CommandShortcutStore.shared.deactivateLayer()
-            return true
         }
 
         if CommandShortcutStore.shared.matchesPrefix(event: event, scopes: scopes) {
