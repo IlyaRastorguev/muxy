@@ -1,0 +1,108 @@
+import Foundation
+import Testing
+
+@testable import Muxy
+
+@MainActor
+@Suite("TerminalCommandTracker")
+struct TerminalCommandTrackerTests {
+    @Test("Submits buffer on newline")
+    func submitsOnNewline() {
+        let pane = UUID()
+        TerminalCommandTracker.shared.recordText("npm run dev\n", paneID: pane)
+        #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane) == "npm run dev")
+    }
+
+    @Test("Submits buffer on carriage return")
+    func submitsOnCarriageReturn() {
+        let pane = UUID()
+        TerminalCommandTracker.shared.recordText("git status\r", paneID: pane)
+        #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane) == "git status")
+    }
+
+    @Test("recordReturn submits current buffer")
+    func recordReturnSubmitsBuffer() {
+        let pane = UUID()
+        TerminalCommandTracker.shared.recordText("make build", paneID: pane)
+        TerminalCommandTracker.shared.recordReturn(paneID: pane)
+        #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane) == "make build")
+    }
+
+    @Test("DEL (0x7F) removes last character")
+    func delRemovesLastCharacter() {
+        let pane = UUID()
+        TerminalCommandTracker.shared.recordText("lss\u{7F}\n", paneID: pane)
+        #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane) == "ls")
+    }
+
+    @Test("Backspace byte (0x08) removes last character")
+    func backspaceByteRemovesLastCharacter() {
+        let pane = UUID()
+        TerminalCommandTracker.shared.recordText("lss\u{8}\n", paneID: pane)
+        #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane) == "ls")
+    }
+
+    @Test("recordBackspace removes last character")
+    func recordBackspaceRemovesLastCharacter() {
+        let pane = UUID()
+        TerminalCommandTracker.shared.recordText("gitt", paneID: pane)
+        TerminalCommandTracker.shared.recordBackspace(paneID: pane)
+        TerminalCommandTracker.shared.recordReturn(paneID: pane)
+        #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane) == "git")
+    }
+
+    @Test("Whitespace-only submission does not overwrite last command")
+    func whitespaceOnlySubmissionIgnored() {
+        let pane = UUID()
+        TerminalCommandTracker.shared.recordText("git log\n", paneID: pane)
+        TerminalCommandTracker.shared.recordText("   \n", paneID: pane)
+        #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane) == "git log")
+    }
+
+    @Test("Empty submission does not overwrite last command")
+    func emptySubmissionIgnored() {
+        let pane = UUID()
+        TerminalCommandTracker.shared.recordText("git status\n", paneID: pane)
+        TerminalCommandTracker.shared.recordText("\n", paneID: pane)
+        #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane) == "git status")
+    }
+
+    @Test("Last command updates on each submission")
+    func lastCommandUpdatesEachSubmission() {
+        let pane = UUID()
+        TerminalCommandTracker.shared.recordText("git status\n", paneID: pane)
+        TerminalCommandTracker.shared.recordText("git log\n", paneID: pane)
+        #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane) == "git log")
+    }
+
+    @Test("Multiple panes tracked independently")
+    func multiplePanesAreIndependent() {
+        let pane1 = UUID()
+        let pane2 = UUID()
+        TerminalCommandTracker.shared.recordText("git log\n", paneID: pane1)
+        TerminalCommandTracker.shared.recordText("npm test\n", paneID: pane2)
+        #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane1) == "git log")
+        #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane2) == "npm test")
+    }
+
+    @Test("removePane clears all tracking state")
+    func removePaneClearsState() {
+        let pane = UUID()
+        TerminalCommandTracker.shared.recordText("git log\n", paneID: pane)
+        TerminalCommandTracker.shared.removePane(pane)
+        #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane) == nil)
+    }
+
+    @Test("Unknown pane returns nil")
+    func unknownPaneReturnsNil() {
+        #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: UUID()) == nil)
+    }
+
+    @Test("Backspace on empty buffer is a no-op")
+    func backspaceOnEmptyBufferIsNoop() {
+        let pane = UUID()
+        TerminalCommandTracker.shared.recordBackspace(paneID: pane)
+        TerminalCommandTracker.shared.recordReturn(paneID: pane)
+        #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane) == nil)
+    }
+}

@@ -24,10 +24,15 @@ final class TabArea: Identifiable {
         activeTabID = tab.id
     }
 
-    init(restoring snapshot: TabAreaSnapshot) {
+    init(restoring snapshot: TabAreaSnapshot, sessionsByPaneID: [UUID: TerminalSessionSnapshot] = [:]) {
         id = snapshot.id
         projectPath = snapshot.projectPath
-        tabs = snapshot.tabs.map { TerminalTab(restoring: $0) }
+        tabs = snapshot.tabs.map { tabSnapshot in
+            TerminalTab(
+                restoring: tabSnapshot,
+                restoredSession: tabSnapshot.paneID.flatMap { sessionsByPaneID[$0] }
+            )
+        }
         if let index = snapshot.activeTabIndex, index >= 0, index < tabs.count {
             activeTabID = tabs[index].id
         } else {

@@ -111,7 +111,8 @@ final class AppState {
         let restored = WorkspaceRestorer.restoreAll(
             from: snapshots,
             projects: projects,
-            worktrees: worktrees
+            worktrees: worktrees,
+            sessionsByPaneID: TerminalSessionStore.shared.sessionsByPaneID
         )
         for entry in restored {
             workspaceRoots[entry.key] = entry.root
@@ -149,6 +150,10 @@ final class AppState {
         } catch {
             logger.error("Failed to save workspaces: \(error)")
         }
+    }
+
+    func saveTerminalSessions() {
+        TerminalSessionStore.shared.save(workspaceRoots: workspaceRoots)
     }
 
     private func saveSelection() {

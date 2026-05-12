@@ -437,6 +437,7 @@ final class GhosttyTerminalNSView: NSView {
             } else {
                 text.withCString { ptr in
                     keyEvent.text = ptr
+                    recordTextInput(text)
                     _ = ghostty_surface_key(surface, keyEvent)
                 }
             }
@@ -472,6 +473,7 @@ final class GhosttyTerminalNSView: NSView {
                 )
                 text.withCString { ptr in
                     keyEvent.text = ptr
+                    recordTextInput(text)
                     _ = ghostty_surface_key(surface, keyEvent)
                 }
             }
@@ -487,9 +489,11 @@ final class GhosttyTerminalNSView: NSView {
             if !text.isEmpty, !keyEvent.composing {
                 text.withCString { ptr in
                     keyEvent.text = ptr
+                    recordTextInput(text)
                     _ = ghostty_surface_key(surface, keyEvent)
                 }
             } else {
+                recordSpecialKey(event)
                 keyEvent.consumed_mods = GHOSTTY_MODS_NONE
                 keyEvent.text = nil
                 _ = ghostty_surface_key(surface, keyEvent)
@@ -997,6 +1001,7 @@ final class GhosttyTerminalNSView: NSView {
     func sendText(_ text: String) {
         guard let surface else { return }
         text.withCString { ptr in
+            recordTextInput(text)
             ghostty_surface_text(surface, ptr, UInt(text.utf8.count))
         }
     }
@@ -1007,6 +1012,9 @@ final class GhosttyTerminalNSView: NSView {
 
     func sendRemoteBytes(_ bytes: Data) {
         guard let surface, !bytes.isEmpty else { return }
+        if let text = String(data: bytes, encoding: .utf8) {
+            recordTextInput(text)
+        }
         bytes.withUnsafeBytes { raw in
             guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return }
             ghostty_surface_send_input_raw(surface, base, UInt(bytes.count))
@@ -1064,6 +1072,11 @@ final class GhosttyTerminalNSView: NSView {
 
     func sendKeyPress(codepoint: UInt32, keycode: UInt32 = 0, mods: ghostty_input_mods_e = GHOSTTY_MODS_NONE) {
         guard let surface else { return }
+        if codepoint == Codepoint.carriageReturn {
+            recordReturnInput()
+        } else if codepoint == Codepoint.delete || keycode == UInt32(KeyCode.backspace) {
+            recordBackspaceInput()
+        }
         var press = ghostty_input_key_s()
         press.action = GHOSTTY_ACTION_PRESS
         press.keycode = keycode
@@ -1098,6 +1111,42 @@ final class GhosttyTerminalNSView: NSView {
             return "/bin/zsh"
         }
         return String(cString: shellPtr)
+    }
+
+    private enum Codepoint {
+        static let carriageReturn: UInt32 = 13
+        static let delete: UInt32 = 127
+    }
+
+    private enum KeyCode {
+        static let `return`: UInt16 = 36
+        static let backspace: UInt16 = 51
+    }
+
+    private func recordTextInput(_ text: String) {
+        guard let paneID = TerminalViewRegistry.shared.paneID(for: self) else { return }
+        TerminalCommandTracker.shared.recordText(text, paneID: paneID)
+    }
+
+    private func recordReturnInput() {
+        guard let paneID = TerminalViewRegistry.shared.paneID(for: self) else { return }
+        TerminalCommandTracker.shared.recordReturn(paneID: paneID)
+    }
+
+    private func recordBackspaceInput() {
+        guard let paneID = TerminalViewRegistry.shared.paneID(for: self) else { return }
+        TerminalCommandTracker.shared.recordBackspace(paneID: paneID)
+    }
+
+    private func recordSpecialKey(_ event: NSEvent) {
+        switch event.keyCode {
+        case KeyCode.return:
+            recordReturnInput()
+        case KeyCode.backspace:
+            recordBackspaceInput()
+        default:
+            return
+        }
     }
 
     enum SearchDirection: String {
@@ -1169,6 +1218,7 @@ extension GhosttyTerminalNSView: @preconcurrency NSTextInputClient {
                 keyEvent.consumed_mods = GHOSTTY_MODS_NONE
                 keyEvent.composing = false
                 keyEvent.text = ptr
+                recordTextInput(text)
                 _ = ghostty_surface_key(surface, keyEvent)
             }
         }
