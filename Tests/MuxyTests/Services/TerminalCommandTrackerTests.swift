@@ -1,4 +1,5 @@
 import Foundation
+import GhosttyKit
 import Testing
 
 @testable import Muxy
@@ -104,5 +105,67 @@ struct TerminalCommandTrackerTests {
         TerminalCommandTracker.shared.recordBackspace(paneID: pane)
         TerminalCommandTracker.shared.recordReturn(paneID: pane)
         #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane) == nil)
+    }
+
+    @Test("Pending command visible before PWD confirmation")
+    func pendingCommandVisibleBeforeConfirmation() {
+        let pane = UUID()
+        TerminalCommandTracker.shared.recordText("vim main.swift\n", paneID: pane)
+        #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane) == "vim main.swift")
+    }
+
+    @Test("confirmCommand promotes pending to confirmed")
+    func confirmCommandPromotesPending() {
+        let pane = UUID()
+        TerminalCommandTracker.shared.recordText("vim main.swift\n", paneID: pane)
+        TerminalCommandTracker.shared.confirmCommand(paneID: pane)
+        #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane) == "vim main.swift")
+    }
+
+    @Test("Confirmed command persists when new pending appears")
+    func confirmedCommandPersistsWhenNewPendingAppears() {
+        let pane = UUID()
+        TerminalCommandTracker.shared.recordText("git log\n", paneID: pane)
+        TerminalCommandTracker.shared.confirmCommand(paneID: pane)
+        TerminalCommandTracker.shared.recordText("git status", paneID: pane)
+        #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane) == "git log")
+    }
+
+    @Test("Secure input ON blocks Enter submission")
+    func secureInputBlocksEnter() {
+        let pane = UUID()
+        TerminalCommandTracker.shared.setSecureInput(GHOSTTY_SECURE_INPUT_ON, paneID: pane)
+        TerminalCommandTracker.shared.recordText("mysecretpassword\n", paneID: pane)
+        #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane) == nil)
+    }
+
+    @Test("Secure input OFF restores tracking")
+    func secureInputOffRestoresTracking() {
+        let pane = UUID()
+        TerminalCommandTracker.shared.setSecureInput(GHOSTTY_SECURE_INPUT_ON, paneID: pane)
+        TerminalCommandTracker.shared.recordText("password\n", paneID: pane)
+        TerminalCommandTracker.shared.setSecureInput(GHOSTTY_SECURE_INPUT_OFF, paneID: pane)
+        TerminalCommandTracker.shared.recordText("git log\n", paneID: pane)
+        #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane) == "git log")
+    }
+
+    @Test("Secure input TOGGLE flips state")
+    func secureInputToggle() {
+        let pane = UUID()
+        TerminalCommandTracker.shared.setSecureInput(GHOSTTY_SECURE_INPUT_TOGGLE, paneID: pane)
+        TerminalCommandTracker.shared.recordText("blocked\n", paneID: pane)
+        #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane) == nil)
+        TerminalCommandTracker.shared.setSecureInput(GHOSTTY_SECURE_INPUT_TOGGLE, paneID: pane)
+        TerminalCommandTracker.shared.recordText("git log\n", paneID: pane)
+        #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane) == "git log")
+    }
+
+    @Test("removePane clears secure input state")
+    func removePaneClearsSecureInputState() {
+        let pane = UUID()
+        TerminalCommandTracker.shared.setSecureInput(GHOSTTY_SECURE_INPUT_ON, paneID: pane)
+        TerminalCommandTracker.shared.removePane(pane)
+        TerminalCommandTracker.shared.recordText("git log\n", paneID: pane)
+        #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane) == "git log")
     }
 }

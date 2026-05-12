@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import Muxy
 
-@Suite("TerminalSessionRestorePolicy")
+@Suite("TerminalSessionRestorePolicy", .serialized)
 struct TerminalSessionRestorePolicyTests {
     @Test("Allows commands that are not blocked")
     func allowsCommandsThatAreNotBlocked() {
@@ -135,6 +135,15 @@ struct TerminalSessionRestorePolicyTests {
         defer { UserDefaults.standard.removeObject(forKey: SessionRestorePreferences.enabledKey) }
         let snapshot = makeSnapshot(startupCommand: nil, lastSubmittedCommand: "nvim main.swift", activity: .running)
         #expect(TerminalSessionRestorePolicy.decision(for: snapshot) == .command("nvim main.swift"))
+    }
+
+    @Test("decision preserves quoted paths with spaces")
+    func decisionPreservesQuotedPathsWithSpaces() {
+        SessionRestorePreferences.isEnabled = true
+        defer { UserDefaults.standard.removeObject(forKey: SessionRestorePreferences.enabledKey) }
+        let command = "nvim '/Users/some user/Library/Application Support/some file.json'"
+        let snapshot = makeSnapshot(startupCommand: nil, lastSubmittedCommand: command, activity: .running)
+        #expect(TerminalSessionRestorePolicy.decision(for: snapshot) == .command(command))
     }
 
     @Test("decision returns none when feature disabled")

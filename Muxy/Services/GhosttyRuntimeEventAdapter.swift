@@ -45,6 +45,9 @@ final class GhosttyRuntimeEventAdapter: GhosttyRuntimeEventHandling {
         case GHOSTTY_ACTION_SEARCH_SELECTED:
             handleSearchSelected(target: target, selected: action.action.search_selected)
             return true
+        case GHOSTTY_ACTION_SECURE_INPUT:
+            handleSecureInput(target: target, secureInput: action.action.secure_input)
+            return true
         case GHOSTTY_ACTION_COMMAND_FINISHED,
              GHOSTTY_ACTION_SHOW_CHILD_EXITED:
             handleCommandExit(target: target)
@@ -78,6 +81,17 @@ final class GhosttyRuntimeEventAdapter: GhosttyRuntimeEventHandling {
         logger.debug("PWD changed: \(path)")
         DispatchQueue.main.async {
             view.onWorkingDirectoryChange?(path)
+            if let paneID = TerminalViewRegistry.shared.paneID(for: view) {
+                TerminalCommandTracker.shared.confirmCommand(paneID: paneID)
+            }
+        }
+    }
+
+    private func handleSecureInput(target: ghostty_target_s, secureInput: ghostty_action_secure_input_e) {
+        guard let view = surfaceView(from: target) else { return }
+        DispatchQueue.main.async {
+            guard let paneID = TerminalViewRegistry.shared.paneID(for: view) else { return }
+            TerminalCommandTracker.shared.setSecureInput(secureInput, paneID: paneID)
         }
     }
 
