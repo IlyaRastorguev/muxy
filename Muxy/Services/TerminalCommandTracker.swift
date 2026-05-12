@@ -36,6 +36,10 @@ final class TerminalCommandTracker {
         lastSubmittedCommands[paneID]
     }
 
+    func clearBuffer(paneID: UUID) {
+        buffers[paneID] = ""
+    }
+
     func removePane(_ paneID: UUID) {
         buffers.removeValue(forKey: paneID)
         lastSubmittedCommands.removeValue(forKey: paneID)
@@ -49,8 +53,7 @@ final class TerminalCommandTracker {
     }
 
     private func removeLastCharacter(paneID: UUID) {
-        guard var buffer = buffers[paneID], !buffer.isEmpty else { return }
-        buffer.removeLast()
-        buffers[paneID] = buffer
+        guard !(buffers[paneID]?.isEmpty ?? true) else { return }
+        buffers[paneID]?.removeLast()
     }
 }

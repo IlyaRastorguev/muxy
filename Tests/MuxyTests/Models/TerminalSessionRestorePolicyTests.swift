@@ -91,4 +91,95 @@ struct TerminalSessionRestorePolicyTests {
         #expect(!TerminalSessionRestorePolicy.isSafeToRestore("find . -name '*.log' | sudo tee /dev/null"))
         #expect(!TerminalSessionRestorePolicy.isSafeToRestore("ls build; rm -rf build"))
     }
+
+    @Test("Does not split on shell separators inside quoted strings")
+    func doesNotSplitInsideQuotedStrings() {
+        #expect(TerminalSessionRestorePolicy.isSafeToRestore("echo \"safe | pipe\""))
+        #expect(TerminalSessionRestorePolicy.isSafeToRestore("echo 'safe; semicolon'"))
+        #expect(TerminalSessionRestorePolicy.isSafeToRestore("grep -E 'foo|bar' file.txt"))
+    }
+
+    @Test("commandToRestore returns startupCommand when set")
+    func commandToRestoreReturnsStartupCommand() {
+        let snapshot = makeSnapshot(startupCommand: "npm run dev", lastSubmittedCommand: "git log", activity: .idle)
+        #expect(snapshot.commandToRestore == "npm run dev")
+    }
+
+    @Test("commandToRestore ignores whitespace-only startupCommand")
+    func commandToRestoreIgnoresWhitespaceStartupCommand() {
+        let snapshot = makeSnapshot(startupCommand: "   ", lastSubmittedCommand: "git log", activity: .running)
+        #expect(snapshot.commandToRestore == "git log")
+    }
+
+    @Test("commandToRestore returns nil for idle pane with no startupCommand")
+    func commandToRestoreNilForIdlePaneWithNoStartupCommand() {
+        let snapshot = makeSnapshot(startupCommand: nil, lastSubmittedCommand: "git log", activity: .idle)
+        #expect(snapshot.commandToRestore == nil)
+    }
+
+    @Test("commandToRestore returns lastSubmittedCommand for running pane")
+    func commandToRestoreReturnsLastSubmittedForRunningPane() {
+        let snapshot = makeSnapshot(startupCommand: nil, lastSubmittedCommand: "claude", activity: .running)
+        #expect(snapshot.commandToRestore == "claude")
+    }
+
+    @Test("commandToRestore returns nil for running pane with no lastSubmittedCommand")
+    func commandToRestoreNilForRunningPaneWithNoCommand() {
+        let snapshot = makeSnapshot(startupCommand: nil, lastSubmittedCommand: nil, activity: .running)
+        #expect(snapshot.commandToRestore == nil)
+    }
+
+    @Test("decision returns command when safe and enabled")
+    func decisionReturnsCommandWhenSafe() {
+        SessionRestorePreferences.isEnabled = true
+        defer { UserDefaults.standard.removeObject(forKey: SessionRestorePreferences.enabledKey) }
+        let snapshot = makeSnapshot(startupCommand: nil, lastSubmittedCommand: "nvim main.swift", activity: .running)
+        #expect(TerminalSessionRestorePolicy.decision(for: snapshot) == .command("nvim main.swift"))
+    }
+
+    @Test("decision returns none when feature disabled")
+    func decisionNoneWhenDisabled() {
+        SessionRestorePreferences.isEnabled = false
+        defer { UserDefaults.standard.removeObject(forKey: SessionRestorePreferences.enabledKey) }
+        let snapshot = makeSnapshot(startupCommand: nil, lastSubmittedCommand: "nvim main.swift", activity: .running)
+        #expect(TerminalSessionRestorePolicy.decision(for: snapshot) == .none)
+    }
+
+    @Test("decision returns none for blocked command")
+    func decisionNoneForBlockedCommand() {
+        SessionRestorePreferences.isEnabled = true
+        defer { UserDefaults.standard.removeObject(forKey: SessionRestorePreferences.enabledKey) }
+        let snapshot = makeSnapshot(startupCommand: nil, lastSubmittedCommand: "sudo rm -rf /", activity: .running)
+        #expect(TerminalSessionRestorePolicy.decision(for: snapshot) == .none)
+    }
+
+    @Test("decision rewrites AI tool command")
+    func decisionRewritesAIToolCommand() {
+        SessionRestorePreferences.isEnabled = true
+        defer { UserDefaults.standard.removeObject(forKey: SessionRestorePreferences.enabledKey) }
+        let snapshot = makeSnapshot(startupCommand: nil, lastSubmittedCommand: "claude", activity: .running)
+        #expect(TerminalSessionRestorePolicy.decision(for: snapshot) == .command("claude --continue"))
+    }
+}
+
+private func makeSnapshot(
+    startupCommand: String?,
+    lastSubmittedCommand: String?,
+    activity: TerminalSessionSnapshot.Activity
+) -> TerminalSessionSnapshot {
+    TerminalSessionSnapshot(
+        id: UUID(),
+        projectID: UUID(),
+        worktreeID: UUID(),
+        paneID: UUID(),
+        tabID: UUID(),
+        areaID: UUID(),
+        projectPath: "/tmp/project",
+        title: "Terminal",
+        workingDirectory: "/tmp/project",
+        startupCommand: startupCommand,
+        lastSubmittedCommand: lastSubmittedCommand,
+        activity: activity,
+        capturedAt: Date()
+    )
 }

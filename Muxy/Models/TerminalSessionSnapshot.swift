@@ -76,11 +76,51 @@ enum TerminalSessionRestorePolicy {
     }
 
     private static func commandSegments(from command: String) -> [String] {
-        command
-            .components(separatedBy: segmentSeparators)
-            .map(normalize)
-            .filter { !$0.isEmpty }
+        ShellSegmentParser.segments(from: command).map(normalize).filter { !$0.isEmpty }
     }
+}
 
-    private static let segmentSeparators = CharacterSet(charactersIn: ";|&")
+private enum ShellSegmentParser {
+    static func segments(from command: String) -> [String] {
+        var segments: [String] = []
+        var current = ""
+        var quote: Character?
+        var isEscaped = false
+
+        for character in command {
+            if isEscaped {
+                current.append(character)
+                isEscaped = false
+                continue
+            }
+            if character == "\\" {
+                isEscaped = true
+                continue
+            }
+            if let activeQuote = quote {
+                if character == activeQuote {
+                    quote = nil
+                } else {
+                    current.append(character)
+                }
+                continue
+            }
+            if character == "'" || character == "\"" {
+                quote = character
+                continue
+            }
+            if character == ";" || character == "|" || character == "&" {
+                let segment = current.trimmingCharacters(in: .whitespaces)
+                if !segment.isEmpty { segments.append(segment) }
+                current = ""
+                continue
+            }
+            current.append(character)
+        }
+
+        if isEscaped { current.append("\\") }
+        let last = current.trimmingCharacters(in: .whitespaces)
+        if !last.isEmpty { segments.append(last) }
+        return segments
+    }
 }

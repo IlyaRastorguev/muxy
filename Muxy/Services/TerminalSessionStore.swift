@@ -33,10 +33,7 @@ final class TerminalSessionStore {
     }
 
     func save(workspaceRoots: [WorktreeKey: SplitNode]) {
-        guard SessionRestorePreferences.isEnabled else {
-            saveFile(sessions: [])
-            return
-        }
+        guard SessionRestorePreferences.isEnabled else { return }
         let snapshots = buildSnapshots(workspaceRoots: workspaceRoots)
             .sorted { $0.capturedAt > $1.capturedAt }
             .prefix(SessionRestorePreferences.maxSnapshots)

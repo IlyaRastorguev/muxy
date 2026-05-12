@@ -1012,9 +1012,6 @@ final class GhosttyTerminalNSView: NSView {
 
     func sendRemoteBytes(_ bytes: Data) {
         guard let surface, !bytes.isEmpty else { return }
-        if let text = String(data: bytes, encoding: .utf8) {
-            recordTextInput(text)
-        }
         bytes.withUnsafeBytes { raw in
             guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return }
             ghostty_surface_send_input_raw(surface, base, UInt(bytes.count))
@@ -1024,6 +1021,7 @@ final class GhosttyTerminalNSView: NSView {
     func submitRichInput(text: String) {
         guard !text.isEmpty else { return }
         let sanitized = text.replacingOccurrences(of: "\u{1B}[201~", with: "")
+        recordTextInput(sanitized)
         sendRemoteBytes(
             TerminalControlBytes.bracketedPasteStart
                 + Data(sanitized.utf8)
@@ -1032,6 +1030,9 @@ final class GhosttyTerminalNSView: NSView {
     }
 
     func clearTerminalInput() {
+        if let paneID = TerminalViewRegistry.shared.paneID(for: self) {
+            TerminalCommandTracker.shared.clearBuffer(paneID: paneID)
+        }
         sendRemoteBytes(TerminalControlBytes.killLineToCursor)
     }
 
