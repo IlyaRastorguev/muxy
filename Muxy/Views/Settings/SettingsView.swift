@@ -13,6 +13,8 @@ struct SettingsView: View {
                 .tabItem { Label("Sessions", systemImage: "clock.arrow.circlepath") }
             KeyboardShortcutsSettingsView()
                 .tabItem { Label("Shortcuts", systemImage: "keyboard") }
+            RecordingSettingsView()
+                .tabItem { Label("Recording", systemImage: "mic") }
             NotificationSettingsView()
                 .tabItem { Label("Notifications", systemImage: "bell") }
             MobileSettingsView()
