@@ -176,7 +176,8 @@ struct ShortcutActionDispatcher {
             else { return false }
             appState.toggleMaximize(areaID: areaID, for: projectID)
             return true
-        case .selectTab1,
+        case .toggleVoiceRecording,
+             .selectTab1,
              .selectTab2,
              .selectTab3,
              .selectTab4,
