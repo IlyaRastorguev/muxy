@@ -19,4 +19,10 @@ struct TerminalLaunchCommandTests {
         let command = TerminalLaunchCommand.shellCommand(interactive: true, shell: "/bin/zsh")
         #expect(!command.contains("/Users/some user/Library/Application Support/some file.json"))
     }
+
+    @Test("Escapes shell path in launch wrapper")
+    func escapesShellPathInLaunchWrapper() {
+        let command = TerminalLaunchCommand.shellCommand(interactive: false, shell: "/tmp/my shell;touch /tmp/pwn")
+        #expect(command == "'/tmp/my shell;touch /tmp/pwn' -l -c 'eval \"$MUXY_STARTUP_COMMAND\"'")
+    }
 }

@@ -6,7 +6,7 @@ enum TerminalLaunchCommand {
 
     static func shellCommand(interactive: Bool, shell: String = userShell()) -> String {
         let flags = interactive ? "-l -i" : "-l"
-        return "\(shell) \(flags) -c 'eval \"$\(environmentKey)\"'"
+        return "\(ShellEscaper.escape(shell)) \(flags) -c 'eval \"$\(environmentKey)\"'"
     }
 
     private static func userShell() -> String {

@@ -40,10 +40,28 @@ final class TerminalSessionStore {
 
     func save(workspaceRoots: [WorktreeKey: SplitNode]) {
         guard SessionRestorePreferences.isEnabled else { return }
-        let snapshots = buildSnapshots(workspaceRoots: workspaceRoots)
-            .sorted { $0.capturedAt > $1.capturedAt }
-            .prefix(SessionRestorePreferences.maxSnapshots)
-        saveFile(sessions: Array(snapshots))
+        let snapshots = Self.retainedSnapshots(
+            buildSnapshots(workspaceRoots: workspaceRoots),
+            maxPerWorktree: SessionRestorePreferences.maxSnapshots
+        )
+        saveFile(sessions: snapshots)
+    }
+
+    static func retainedSnapshots(
+        _ snapshots: [TerminalSessionSnapshot],
+        maxPerWorktree: Int
+    ) -> [TerminalSessionSnapshot] {
+        guard maxPerWorktree > 0 else { return [] }
+        return Dictionary(grouping: snapshots) { snapshot in
+            WorktreeKey(projectID: snapshot.projectID, worktreeID: snapshot.worktreeID)
+        }
+        .values
+        .flatMap { group in
+            group
+                .sorted { $0.capturedAt > $1.capturedAt }
+                .prefix(maxPerWorktree)
+        }
+        .sorted { $0.capturedAt > $1.capturedAt }
     }
 
     func recordClosedTerminalTab(_ snapshot: ClosedTerminalTabSnapshot) {
