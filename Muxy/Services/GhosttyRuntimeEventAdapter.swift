@@ -4,7 +4,6 @@ import GhosttyKit
 import os
 
 private let logger = Logger(subsystem: "app.muxy", category: "RuntimeEventAdapter")
-
 protocol GhosttyRuntimeEventHandling {
     func wakeup()
     func action(app: ghostty_app_t?, target: ghostty_target_s, action: ghostty_action_s) -> Bool
@@ -70,6 +69,9 @@ final class GhosttyRuntimeEventAdapter: GhosttyRuntimeEventHandling {
         guard let titlePtr = title.title else { return }
         let titleString = String(cString: titlePtr)
         DispatchQueue.main.async {
+            if let paneID = TerminalViewRegistry.shared.paneID(for: view) {
+                TerminalCommandTracker.shared.recordShellCommandCandidate(titleString, paneID: paneID)
+            }
             view.onTitleChange?(titleString)
         }
     }

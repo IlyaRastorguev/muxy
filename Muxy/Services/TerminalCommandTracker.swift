@@ -6,6 +6,7 @@ final class TerminalCommandTracker {
     static let shared = TerminalCommandTracker()
 
     private var buffers: [UUID: String] = [:]
+    private var unreliableBuffers: Set<UUID> = []
     private var pendingCommands: [UUID: String] = [:]
     private var confirmedCommands: [UUID: String] = [:]
     private var secureInputPanes: Set<UUID> = []
@@ -22,6 +23,10 @@ final class TerminalCommandTracker {
                  "\u{8}":
                 removeLastCharacter(paneID: paneID)
             default:
+                guard character.isShellCommandText else {
+                    markBufferUnreliable(paneID: paneID)
+                    continue
+                }
                 buffers[paneID, default: ""].append(character)
             }
         }
@@ -33,6 +38,13 @@ final class TerminalCommandTracker {
 
     func recordBackspace(paneID: UUID) {
         removeLastCharacter(paneID: paneID)
+    }
+
+    func recordShellCommandCandidate(_ command: String, paneID: UUID) {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let pending = pendingCommands[paneID] else { return }
+        guard Self.commandsAreCompatible(pending: pending, candidate: trimmed) else { return }
+        recordShellCommand(trimmed, paneID: paneID)
     }
 
     func confirmCommand(paneID: UUID) {
@@ -59,15 +71,17 @@ final class TerminalCommandTracker {
     }
 
     func lastSubmittedCommand(for paneID: UUID) -> String? {
-        confirmedCommands[paneID] ?? pendingCommands[paneID]
+        pendingCommands[paneID] ?? confirmedCommands[paneID]
     }
 
     func clearBuffer(paneID: UUID) {
         buffers[paneID] = ""
+        unreliableBuffers.remove(paneID)
     }
 
     func removePane(_ paneID: UUID) {
         buffers.removeValue(forKey: paneID)
+        unreliableBuffers.remove(paneID)
         pendingCommands.removeValue(forKey: paneID)
         confirmedCommands.removeValue(forKey: paneID)
         secureInputPanes.remove(paneID)
@@ -76,6 +90,12 @@ final class TerminalCommandTracker {
     private func submitBuffer(paneID: UUID) {
         guard !secureInputPanes.contains(paneID) else {
             buffers[paneID] = ""
+            unreliableBuffers.remove(paneID)
+            return
+        }
+        guard !unreliableBuffers.contains(paneID) else {
+            buffers[paneID] = ""
+            unreliableBuffers.remove(paneID)
             return
         }
         let command = buffers[paneID, default: ""].trimmingCharacters(in: .whitespacesAndNewlines)
@@ -84,8 +104,39 @@ final class TerminalCommandTracker {
         pendingCommands[paneID] = command
     }
 
+    private func markBufferUnreliable(paneID: UUID) {
+        unreliableBuffers.insert(paneID)
+    }
+
+    private func recordShellCommand(_ command: String, paneID: UUID) {
+        buffers[paneID] = ""
+        unreliableBuffers.remove(paneID)
+        pendingCommands[paneID] = command
+    }
+
     private func removeLastCharacter(paneID: UUID) {
         guard !(buffers[paneID]?.isEmpty ?? true) else { return }
         buffers[paneID]?.removeLast()
+    }
+
+    private static func commandsAreCompatible(pending: String, candidate: String) -> Bool {
+        guard !candidate.isEmpty else { return false }
+        guard firstWord(in: pending) == firstWord(in: candidate) else { return false }
+        return candidate.count >= pending.count
+    }
+
+    private static func firstWord(in command: String) -> String {
+        command
+            .split(whereSeparator: \.isWhitespace)
+            .first
+            .map(String.init) ?? ""
+    }
+}
+
+private extension Character {
+    var isShellCommandText: Bool {
+        unicodeScalars.allSatisfy { scalar in
+            scalar.value >= 0x20 && scalar.value != 0x7F
+        }
     }
 }

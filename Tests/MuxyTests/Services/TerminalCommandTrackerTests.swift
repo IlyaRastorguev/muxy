@@ -68,12 +68,67 @@ struct TerminalCommandTrackerTests {
         #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane) == "git status")
     }
 
+    @Test("Tab completion candidate does not overwrite last command")
+    func tabCompletionCandidateDoesNotOverwriteLastCommand() {
+        let pane = UUID()
+        TerminalCommandTracker.shared.recordText("nvim main.swift\n", paneID: pane)
+        TerminalCommandTracker.shared.confirmCommand(paneID: pane)
+        TerminalCommandTracker.shared.recordText("nv\t/U\tLApxter\n", paneID: pane)
+        #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane) == "nvim main.swift")
+    }
+
+    @Test("Escape sequence candidate does not overwrite last command")
+    func escapeSequenceCandidateDoesNotOverwriteLastCommand() {
+        let pane = UUID()
+        TerminalCommandTracker.shared.recordText("git status\n", paneID: pane)
+        TerminalCommandTracker.shared.confirmCommand(paneID: pane)
+        TerminalCommandTracker.shared.recordText("nvim \u{1B}[Dfile.json\n", paneID: pane)
+        #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane) == "git status")
+    }
+
     @Test("Last command updates on each submission")
     func lastCommandUpdatesEachSubmission() {
         let pane = UUID()
         TerminalCommandTracker.shared.recordText("git status\n", paneID: pane)
         TerminalCommandTracker.shared.recordText("git log\n", paneID: pane)
         #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane) == "git log")
+    }
+
+    @Test("Escaped path command is preserved")
+    func escapedPathCommandIsPreserved() {
+        let pane = UUID()
+        let command = "nvim /Users/some\\ user/Library/Application\\ Support/some\\ file.json"
+        TerminalCommandTracker.shared.recordText(command + "\n", paneID: pane)
+        #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane) == command)
+    }
+
+    @Test("Submitted command overrides older confirmed command before shell confirmation")
+    func submittedCommandOverridesOlderConfirmedCommand() {
+        let pane = UUID()
+        let command = "nvim /Users/some\\ user/Library/Application\\ Support/some\\ file.json"
+        TerminalCommandTracker.shared.recordText("nvim\n", paneID: pane)
+        TerminalCommandTracker.shared.confirmCommand(paneID: pane)
+        TerminalCommandTracker.shared.recordText(command + "\n", paneID: pane)
+        #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane) == command)
+    }
+
+    @Test("Shell command overrides input reconstructed before completion")
+    func shellCommandOverridesInputReconstructedBeforeCompletion() {
+        let pane = UUID()
+        let command = "nvim /Users/some\\ user/Library/Application\\ Support/some\\ file.json"
+        TerminalCommandTracker.shared.recordText("nvim /U", paneID: pane)
+        TerminalCommandTracker.shared.recordReturn(paneID: pane)
+        TerminalCommandTracker.shared.recordShellCommandCandidate(command, paneID: pane)
+        #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane) == command)
+    }
+
+    @Test("Shell title candidate with different command does not overwrite pending command")
+    func shellTitleCandidateWithDifferentCommandDoesNotOverwritePendingCommand() {
+        let pane = UUID()
+        TerminalCommandTracker.shared.recordText("nvim /U", paneID: pane)
+        TerminalCommandTracker.shared.recordReturn(paneID: pane)
+        TerminalCommandTracker.shared.recordShellCommandCandidate("~/project", paneID: pane)
+        #expect(TerminalCommandTracker.shared.lastSubmittedCommand(for: pane) == "nvim /U")
     }
 
     @Test("Multiple panes tracked independently")
