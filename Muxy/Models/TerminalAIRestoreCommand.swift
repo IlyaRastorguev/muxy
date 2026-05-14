@@ -1,6 +1,12 @@
 import Foundation
 
 enum TerminalAIRestoreCommand {
+    static func launch(for command: String) -> TerminalRestoredLaunch {
+        let restoredCommand = rewriting(command)
+        let fallbackCommand = restoredCommand == command ? nil : command
+        return TerminalRestoredLaunch(command: restoredCommand, fallbackCommand: fallbackCommand)
+    }
+
     static func rewriting(_ command: String) -> String {
         let normalized = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return command }

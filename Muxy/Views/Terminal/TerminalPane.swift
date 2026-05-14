@@ -143,6 +143,7 @@ struct TerminalBridge: NSViewRepresentable {
             for: state.id,
             workingDirectory: state.currentWorkingDirectory ?? state.projectPath,
             command: launch.command,
+            fallbackCommand: launch.fallbackCommand,
             commandInteractive: launch.interactive
         )
         if view.envVars.isEmpty, let key = worktreeKey {

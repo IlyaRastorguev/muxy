@@ -87,6 +87,34 @@ struct TabAreaTests {
         #expect(pane?.projectPath == testPath)
         #expect(pane?.currentWorkingDirectory == "/tmp/test/Sources")
         #expect(pane?.startupCommand == "nvim Package.swift")
+        #expect(pane?.startupFallbackCommand == nil)
+        #expect(pane?.startupCommandInteractive == true)
+    }
+
+    @Test("restoreClosedTerminalTab keeps original AI command as fallback")
+    func restoreClosedTerminalTabKeepsOriginalAICommandAsFallback() {
+        let area = TabArea(projectPath: testPath)
+        let snapshot = ClosedTerminalTabSnapshot(
+            id: UUID(),
+            projectID: UUID(),
+            worktreeID: UUID(),
+            areaID: area.id,
+            projectPath: testPath,
+            title: "Codex",
+            customTitle: nil,
+            colorID: nil,
+            workingDirectory: "/tmp/test",
+            startupCommand: nil,
+            lastSubmittedCommand: "codex",
+            closedSequence: 1,
+            closedAt: Date()
+        )
+
+        area.restoreClosedTerminalTab(snapshot)
+
+        let pane = area.activeTab?.content.pane
+        #expect(pane?.startupCommand == "codex resume --last")
+        #expect(pane?.startupFallbackCommand == "codex")
         #expect(pane?.startupCommandInteractive == true)
     }
 

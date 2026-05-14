@@ -7,6 +7,7 @@ final class GhosttyTerminalNSView: NSView {
     nonisolated(unsafe) private(set) var surface: ghostty_surface_t?
     private let workingDirectory: String
     private let command: String?
+    private let fallbackCommand: String?
     private let commandInteractive: Bool
     var envVars: [(key: String, value: String)] = []
     var onTitleChange: ((String) -> Void)?
@@ -49,9 +50,15 @@ final class GhosttyTerminalNSView: NSView {
     private var commandSelectorCalled = false
     private var inputTrackingDecisionCache: (expiresAt: Date, canRecord: Bool)?
 
-    init(workingDirectory: String, command: String? = nil, commandInteractive: Bool = false) {
+    init(
+        workingDirectory: String,
+        command: String? = nil,
+        fallbackCommand: String? = nil,
+        commandInteractive: Bool = false
+    ) {
         self.workingDirectory = workingDirectory
         self.command = command
+        self.fallbackCommand = fallbackCommand
         self.commandInteractive = commandInteractive
         super.init(frame: .zero)
         wantsLayer = true
@@ -121,6 +128,13 @@ final class GhosttyTerminalNSView: NSView {
             cStrings.append(loginWrapped)
             cStrings.append(contentsOf: [commandKey, commandValue])
             cEnvVars.append(ghostty_env_var_s(key: commandKey, value: commandValue))
+            if let fallbackCommand,
+               let fallbackCommandKey = strdup(TerminalLaunchCommand.fallbackEnvironmentKey),
+               let fallbackCommandValue = strdup(fallbackCommand)
+            {
+                cStrings.append(contentsOf: [fallbackCommandKey, fallbackCommandValue])
+                cEnvVars.append(ghostty_env_var_s(key: fallbackCommandKey, value: fallbackCommandValue))
+            }
             config.command = UnsafePointer(loginWrapped)
             config.wait_after_command = false
         }

@@ -8,6 +8,7 @@ final class TerminalPaneState: Identifiable {
     var title: String
     var currentWorkingDirectory: String?
     let startupCommand: String?
+    let startupFallbackCommand: String?
     let startupCommandInteractive: Bool
     let externalEditorFilePath: String?
     let restoredSession: TerminalSessionSnapshot?
@@ -24,6 +25,7 @@ final class TerminalPaneState: Identifiable {
         title: String = "Terminal",
         initialWorkingDirectory: String? = nil,
         startupCommand: String? = nil,
+        startupFallbackCommand: String? = nil,
         startupCommandInteractive: Bool = false,
         externalEditorFilePath: String? = nil,
         restoredSession: TerminalSessionSnapshot? = nil
@@ -33,6 +35,7 @@ final class TerminalPaneState: Identifiable {
         self.title = title
         self.currentWorkingDirectory = initialWorkingDirectory
         self.startupCommand = startupCommand
+        self.startupFallbackCommand = startupFallbackCommand
         self.startupCommandInteractive = startupCommandInteractive
         self.externalEditorFilePath = externalEditorFilePath
         self.restoredSession = restoredSession
@@ -40,22 +43,30 @@ final class TerminalPaneState: Identifiable {
         if let restoredSession {
             let decision = TerminalSessionRestorePolicy.decision(for: restoredSession)
             restoreDecision = decision
-            if case let .command(command) = decision {
-                activeRestoredCommand = command
+            if case let .command(launch) = decision {
+                activeRestoredCommand = launch.command
             }
         }
     }
 
-    func consumeRestoredLaunch() -> (command: String?, interactive: Bool) {
+    func consumeRestoredLaunch() -> TerminalPaneLaunch {
         guard !restoreConsumed else {
-            return (startupCommand, startupCommandInteractive)
+            return TerminalPaneLaunch(
+                command: startupCommand,
+                fallbackCommand: startupFallbackCommand,
+                interactive: startupCommandInteractive
+            )
         }
         restoreConsumed = true
         switch restoreDecision {
         case .none:
-            return (startupCommand, startupCommandInteractive)
-        case let .command(command):
-            return (command, true)
+            return TerminalPaneLaunch(
+                command: startupCommand,
+                fallbackCommand: startupFallbackCommand,
+                interactive: startupCommandInteractive
+            )
+        case let .command(launch):
+            return TerminalPaneLaunch(command: launch.command, fallbackCommand: launch.fallbackCommand, interactive: true)
         }
     }
 
@@ -72,4 +83,10 @@ final class TerminalPaneState: Identifiable {
         currentWorkingDirectory = path
         branchObserver.update(repoPath: path)
     }
+}
+
+struct TerminalPaneLaunch {
+    let command: String?
+    let fallbackCommand: String?
+    let interactive: Bool
 }

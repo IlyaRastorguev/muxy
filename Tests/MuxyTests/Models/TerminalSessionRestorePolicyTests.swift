@@ -30,6 +30,30 @@ struct TerminalSessionRestorePolicyTests {
         #expect(TerminalAIRestoreCommand.rewriting("opencode") == "opencode --continue")
     }
 
+    @Test("Adds original AI launch as fallback when rewriting")
+    func addsOriginalAILaunchFallbackWhenRewriting() {
+        #expect(TerminalAIRestoreCommand.launch(for: "codex") == TerminalRestoredLaunch(
+            command: "codex resume --last",
+            fallbackCommand: "codex"
+        ))
+        #expect(TerminalAIRestoreCommand.launch(for: "claude --model sonnet") == TerminalRestoredLaunch(
+            command: "claude --continue --model sonnet",
+            fallbackCommand: "claude --model sonnet"
+        ))
+    }
+
+    @Test("Does not add fallback when command is unchanged")
+    func doesNotAddFallbackWhenCommandIsUnchanged() {
+        #expect(TerminalAIRestoreCommand.launch(for: "npm run dev") == TerminalRestoredLaunch(
+            command: "npm run dev",
+            fallbackCommand: nil
+        ))
+        #expect(TerminalAIRestoreCommand.launch(for: "codex resume abc123") == TerminalRestoredLaunch(
+            command: "codex resume abc123",
+            fallbackCommand: nil
+        ))
+    }
+
     @Test("Keeps explicit AI conversation restore commands")
     func keepsExplicitAIConversationRestoreCommands() {
         #expect(TerminalAIRestoreCommand.rewriting("codex resume abc123") == "codex resume abc123")
@@ -134,7 +158,10 @@ struct TerminalSessionRestorePolicyTests {
         SessionRestorePreferences.isEnabled = true
         defer { UserDefaults.standard.removeObject(forKey: SessionRestorePreferences.enabledKey) }
         let snapshot = makeSnapshot(startupCommand: nil, lastSubmittedCommand: "nvim main.swift", activity: .running)
-        #expect(TerminalSessionRestorePolicy.decision(for: snapshot) == .command("nvim main.swift"))
+        #expect(TerminalSessionRestorePolicy.decision(for: snapshot) == .command(TerminalRestoredLaunch(
+            command: "nvim main.swift",
+            fallbackCommand: nil
+        )))
     }
 
     @Test("decision preserves quoted paths with spaces")
@@ -143,7 +170,10 @@ struct TerminalSessionRestorePolicyTests {
         defer { UserDefaults.standard.removeObject(forKey: SessionRestorePreferences.enabledKey) }
         let command = "nvim '/Users/some user/Library/Application Support/some file.json'"
         let snapshot = makeSnapshot(startupCommand: nil, lastSubmittedCommand: command, activity: .running)
-        #expect(TerminalSessionRestorePolicy.decision(for: snapshot) == .command(command))
+        #expect(TerminalSessionRestorePolicy.decision(for: snapshot) == .command(TerminalRestoredLaunch(
+            command: command,
+            fallbackCommand: nil
+        )))
     }
 
     @Test("decision returns none when feature disabled")
@@ -167,7 +197,10 @@ struct TerminalSessionRestorePolicyTests {
         SessionRestorePreferences.isEnabled = true
         defer { UserDefaults.standard.removeObject(forKey: SessionRestorePreferences.enabledKey) }
         let snapshot = makeSnapshot(startupCommand: nil, lastSubmittedCommand: "claude", activity: .running)
-        #expect(TerminalSessionRestorePolicy.decision(for: snapshot) == .command("claude --continue"))
+        #expect(TerminalSessionRestorePolicy.decision(for: snapshot) == .command(TerminalRestoredLaunch(
+            command: "claude --continue",
+            fallbackCommand: "claude"
+        )))
     }
 }
 
