@@ -296,7 +296,6 @@ final class RemoteServerDelegate: MuxyRemoteServerDelegate {
             for: paneID,
             workingDirectory: pane.currentWorkingDirectory ?? pane.projectPath,
             command: pane.startupCommand,
-            fallbackCommand: pane.startupFallbackCommand,
             commandInteractive: pane.startupCommandInteractive
         )
         if view.envVars.isEmpty {

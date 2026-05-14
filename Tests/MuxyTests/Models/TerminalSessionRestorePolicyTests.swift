@@ -21,76 +21,6 @@ struct TerminalSessionRestorePolicyTests {
         #expect(!TerminalSessionRestorePolicy.isSafeToRestore("sudo npm run dev"))
     }
 
-    @Test("Rewrites AI tool launches to continue previous conversations")
-    func rewritesAIToolLaunches() {
-        #expect(TerminalAIRestoreCommand.rewriting("codex") == "codex resume --last")
-        #expect(TerminalAIRestoreCommand.rewriting("codex --model gpt-5") == "codex resume --last --model gpt-5")
-        #expect(TerminalAIRestoreCommand.rewriting("claude") == "claude --continue")
-        #expect(TerminalAIRestoreCommand.rewriting("agent --model sonnet") == "agent --continue --model sonnet")
-        #expect(TerminalAIRestoreCommand.rewriting("opencode") == "opencode --continue")
-    }
-
-    @Test("Adds original AI launch as fallback when rewriting")
-    func addsOriginalAILaunchFallbackWhenRewriting() {
-        #expect(TerminalAIRestoreCommand.launch(for: "codex") == TerminalRestoredLaunch(
-            command: "codex resume --last",
-            fallbackCommand: "codex"
-        ))
-        #expect(TerminalAIRestoreCommand.launch(for: "claude --model sonnet") == TerminalRestoredLaunch(
-            command: "claude --continue --model sonnet",
-            fallbackCommand: "claude --model sonnet"
-        ))
-    }
-
-    @Test("Does not add fallback when command is unchanged")
-    func doesNotAddFallbackWhenCommandIsUnchanged() {
-        #expect(TerminalAIRestoreCommand.launch(for: "npm run dev") == TerminalRestoredLaunch(
-            command: "npm run dev",
-            fallbackCommand: nil
-        ))
-        #expect(TerminalAIRestoreCommand.launch(for: "codex resume abc123") == TerminalRestoredLaunch(
-            command: "codex resume abc123",
-            fallbackCommand: nil
-        ))
-    }
-
-    @Test("Keeps explicit AI conversation restore commands")
-    func keepsExplicitAIConversationRestoreCommands() {
-        #expect(TerminalAIRestoreCommand.rewriting("codex resume abc123") == "codex resume abc123")
-        #expect(TerminalAIRestoreCommand.rewriting("claude --continue") == "claude --continue")
-        #expect(TerminalAIRestoreCommand.rewriting("agent --resume abc123") == "agent --resume abc123")
-        #expect(TerminalAIRestoreCommand.rewriting("opencode --continue") == "opencode --continue")
-    }
-
-    @Test("Does not rewrite AI tools inside compound shell commands")
-    func doesNotRewriteCompoundAICommands() {
-        #expect(TerminalAIRestoreCommand.rewriting("echo ready && codex") == "echo ready && codex")
-    }
-
-    @Test("Rewrites AI tools invoked via absolute path")
-    func rewritesAbsolutePathAITools() {
-        #expect(TerminalAIRestoreCommand.rewriting("/usr/local/bin/claude") == "/usr/local/bin/claude --continue")
-        #expect(TerminalAIRestoreCommand.rewriting("/opt/homebrew/bin/codex") == "/opt/homebrew/bin/codex resume --last")
-    }
-
-    @Test("Rewrites AI tools with quoted arguments")
-    func rewritesAIToolsWithQuotedArguments() {
-        #expect(TerminalAIRestoreCommand.rewriting("claude \"fix the bug\"") == "claude --continue 'fix the bug'")
-        #expect(TerminalAIRestoreCommand.rewriting("codex 'review changes'") == "codex resume --last 'review changes'")
-    }
-
-    @Test("Leaves empty and whitespace-only commands unchanged")
-    func leavesEmptyCommandsUnchanged() {
-        #expect(TerminalAIRestoreCommand.rewriting("") == "")
-        #expect(TerminalAIRestoreCommand.rewriting("   ") == "   ")
-    }
-
-    @Test("Leaves non-AI commands unchanged")
-    func leavesNonAICommandsUnchanged() {
-        #expect(TerminalAIRestoreCommand.rewriting("vim main.swift") == "vim main.swift")
-        #expect(TerminalAIRestoreCommand.rewriting("npm run dev") == "npm run dev")
-    }
-
     @Test("Blocks commands that are prefixes of excluded patterns")
     func blocksPrefixExcludedCommands() {
         #expect(!TerminalSessionRestorePolicy.isSafeToRestore("rm file.txt"))
@@ -158,10 +88,7 @@ struct TerminalSessionRestorePolicyTests {
         SessionRestorePreferences.isEnabled = true
         defer { UserDefaults.standard.removeObject(forKey: SessionRestorePreferences.enabledKey) }
         let snapshot = makeSnapshot(startupCommand: nil, lastSubmittedCommand: "nvim main.swift", activity: .running)
-        #expect(TerminalSessionRestorePolicy.decision(for: snapshot) == .command(TerminalRestoredLaunch(
-            command: "nvim main.swift",
-            fallbackCommand: nil
-        )))
+        #expect(TerminalSessionRestorePolicy.decision(for: snapshot) == .command("nvim main.swift"))
     }
 
     @Test("decision preserves quoted paths with spaces")
@@ -170,10 +97,7 @@ struct TerminalSessionRestorePolicyTests {
         defer { UserDefaults.standard.removeObject(forKey: SessionRestorePreferences.enabledKey) }
         let command = "nvim '/Users/some user/Library/Application Support/some file.json'"
         let snapshot = makeSnapshot(startupCommand: nil, lastSubmittedCommand: command, activity: .running)
-        #expect(TerminalSessionRestorePolicy.decision(for: snapshot) == .command(TerminalRestoredLaunch(
-            command: command,
-            fallbackCommand: nil
-        )))
+        #expect(TerminalSessionRestorePolicy.decision(for: snapshot) == .command(command))
     }
 
     @Test("decision returns none when feature disabled")
@@ -192,15 +116,12 @@ struct TerminalSessionRestorePolicyTests {
         #expect(TerminalSessionRestorePolicy.decision(for: snapshot) == .none)
     }
 
-    @Test("decision rewrites AI tool command")
-    func decisionRewritesAIToolCommand() {
+    @Test("decision preserves AI tool command")
+    func decisionPreservesAIToolCommand() {
         SessionRestorePreferences.isEnabled = true
         defer { UserDefaults.standard.removeObject(forKey: SessionRestorePreferences.enabledKey) }
         let snapshot = makeSnapshot(startupCommand: nil, lastSubmittedCommand: "claude", activity: .running)
-        #expect(TerminalSessionRestorePolicy.decision(for: snapshot) == .command(TerminalRestoredLaunch(
-            command: "claude --continue",
-            fallbackCommand: "claude"
-        )))
+        #expect(TerminalSessionRestorePolicy.decision(for: snapshot) == .command("claude"))
     }
 }
 

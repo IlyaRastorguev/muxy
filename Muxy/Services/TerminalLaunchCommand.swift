@@ -3,7 +3,6 @@ import Foundation
 
 enum TerminalLaunchCommand {
     static let environmentKey = "MUXY_STARTUP_COMMAND"
-    static let fallbackEnvironmentKey = "MUXY_STARTUP_FALLBACK_COMMAND"
 
     static func shellCommand(interactive: Bool, shell: String = userShell()) -> String {
         let flags = interactive ? "-l -i" : "-l"
@@ -14,8 +13,8 @@ enum TerminalLaunchCommand {
         [
             "eval \"$\(environmentKey)\"",
             "muxy_status=$?",
-            "if [ $muxy_status -ne 0 ] && [ -n \"${\(fallbackEnvironmentKey)+x}\" ]",
-            "then eval \"$\(fallbackEnvironmentKey)\"",
+            "if [ $muxy_status -ne 0 ]",
+            "then exec \"${SHELL:-/bin/zsh}\" -l",
             "else exit $muxy_status",
             "fi",
         ].joined(separator: "; ")

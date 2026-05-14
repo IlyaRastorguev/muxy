@@ -84,13 +84,11 @@ final class TabArea: Identifiable {
     func restoreClosedTerminalTab(_ snapshot: ClosedTerminalTabSnapshot) {
         let command = snapshot.commandToRestore
         let safeCommand = command.flatMap { TerminalSessionRestorePolicy.isSafeToRestore($0) ? $0 : nil }
-        let launch = safeCommand.map { TerminalAIRestoreCommand.launch(for: $0) }
         let pane = TerminalPaneState(
             projectPath: snapshot.projectPath,
             title: snapshot.title,
             initialWorkingDirectory: snapshot.workingDirectory,
-            startupCommand: launch?.command,
-            startupFallbackCommand: launch?.fallbackCommand,
+            startupCommand: safeCommand,
             startupCommandInteractive: safeCommand != nil
         )
         let tab = TerminalTab(pane: pane)

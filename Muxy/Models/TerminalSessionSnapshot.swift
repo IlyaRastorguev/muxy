@@ -86,19 +86,14 @@ struct ClosedTerminalTabSnapshot: Codable, Identifiable, Equatable {
 
 enum TerminalSessionRestoreDecision: Equatable {
     case none
-    case command(TerminalRestoredLaunch)
-}
-
-struct TerminalRestoredLaunch: Equatable {
-    let command: String
-    let fallbackCommand: String?
+    case command(String)
 }
 
 enum TerminalSessionRestorePolicy {
     static func decision(for snapshot: TerminalSessionSnapshot) -> TerminalSessionRestoreDecision {
         guard SessionRestorePreferences.isEnabled else { return .none }
         guard let command = snapshot.commandToRestore else { return .none }
-        return isSafeToRestore(command) ? .command(TerminalAIRestoreCommand.launch(for: command)) : .none
+        return isSafeToRestore(command) ? .command(command) : .none
     }
 
     static func isSafeToRestore(_ command: String) -> Bool {
