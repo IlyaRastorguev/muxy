@@ -33,8 +33,55 @@ struct TerminalSessionSnapshot: Codable, Identifiable {
 struct TerminalSessionFile: Codable {
     let schemaVersion: Int
     let sessions: [TerminalSessionSnapshot]
+    let closedTerminalTabs: [ClosedTerminalTabSnapshot]
 
-    static let currentSchemaVersion = 1
+    static let currentSchemaVersion = 2
+
+    init(
+        schemaVersion: Int,
+        sessions: [TerminalSessionSnapshot],
+        closedTerminalTabs: [ClosedTerminalTabSnapshot] = []
+    ) {
+        self.schemaVersion = schemaVersion
+        self.sessions = sessions
+        self.closedTerminalTabs = closedTerminalTabs
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        sessions = try container.decode([TerminalSessionSnapshot].self, forKey: .sessions)
+        closedTerminalTabs = try container.decodeIfPresent(
+            [ClosedTerminalTabSnapshot].self,
+            forKey: .closedTerminalTabs
+        ) ?? []
+    }
+}
+
+struct ClosedTerminalTabSnapshot: Codable, Identifiable, Equatable {
+    let id: UUID
+    let projectID: UUID
+    let worktreeID: UUID
+    let areaID: UUID
+    let projectPath: String
+    let title: String
+    let customTitle: String?
+    let colorID: String?
+    let workingDirectory: String
+    let startupCommand: String?
+    let lastSubmittedCommand: String?
+    let closedSequence: Int64
+    let closedAt: Date
+
+    var commandToRestore: String? {
+        if let lastSubmittedCommand, !lastSubmittedCommand.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return lastSubmittedCommand
+        }
+        guard let startupCommand, !startupCommand.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return startupCommand
+    }
 }
 
 enum TerminalSessionRestoreDecision: Equatable {

@@ -37,6 +37,7 @@ final class AppState {
         case createEditorTab(projectID: UUID, areaID: UUID?, filePath: String, suppressInitialFocus: Bool)
         case createExternalEditorTab(projectID: UUID, areaID: UUID?, filePath: String, command: String)
         case createDiffViewerTab(projectID: UUID, areaID: UUID?, request: DiffViewerRequest)
+        case restoreClosedTerminalTab(projectID: UUID, areaID: UUID?, snapshot: ClosedTerminalTabSnapshot)
         case closeTab(projectID: UUID, areaID: UUID, tabID: UUID)
         case selectTab(projectID: UUID, areaID: UUID, tabID: UUID)
         case selectTabByIndex(projectID: UUID, index: Int)
@@ -422,7 +423,7 @@ final class AppState {
     func forceCloseTab(_ tabID: UUID, areaID: UUID, projectID: UUID) {
         clearPendingProcessCloseIfMatching(tabID: tabID, areaID: areaID, projectID: projectID)
         unpinTabIfNeeded(tabID, areaID: areaID, projectID: projectID)
-        dispatch(.closeTab(projectID: projectID, areaID: areaID, tabID: tabID))
+        closeAndRecordTerminalTab(tabID, areaID: areaID, projectID: projectID)
     }
 
     func confirmCloseRunningTab() {
@@ -475,17 +476,67 @@ final class AppState {
             pendingLastTabClose = PendingTabClose(projectID: projectID, areaID: areaID, tabID: tabID)
             return
         }
-        dispatch(.closeTab(projectID: projectID, areaID: areaID, tabID: tabID))
+        closeAndRecordTerminalTab(tabID, areaID: areaID, projectID: projectID)
     }
 
     func confirmCloseLastTab() {
         guard let pending = pendingLastTabClose else { return }
         pendingLastTabClose = nil
-        dispatch(.closeTab(projectID: pending.projectID, areaID: pending.areaID, tabID: pending.tabID))
+        closeAndRecordTerminalTab(pending.tabID, areaID: pending.areaID, projectID: pending.projectID)
     }
 
     func cancelCloseLastTab() {
         pendingLastTabClose = nil
+    }
+
+    func reopenLastClosedTerminalTab() -> Bool {
+        guard let projectID = activeProjectID,
+              let key = activeWorktreeKey(for: projectID),
+              workspaceRoots[key] != nil
+        else { return false }
+        guard let snapshot = TerminalSessionStore.shared.popLastClosedTerminalTab(
+            projectID: projectID,
+            worktreeID: key.worktreeID
+        )
+        else { return false }
+        dispatch(.restoreClosedTerminalTab(
+            projectID: projectID,
+            areaID: focusedAreaID[key],
+            snapshot: snapshot
+        ))
+        return true
+    }
+
+    private func recordClosedTerminalTab(tabID: UUID, areaID: UUID, projectID: UUID) {
+        guard let key = activeWorktreeKey(for: projectID),
+              let root = workspaceRoots[key],
+              let area = root.findArea(id: areaID),
+              let tab = area.tabs.first(where: { $0.id == tabID }),
+              let pane = tab.content.pane
+        else { return }
+        let lastSubmittedCommand = TerminalCommandTracker.shared.lastSubmittedCommand(for: pane.id)
+            ?? pane.activeRestoredCommand
+        TerminalSessionStore.shared.recordClosedTerminalTab(ClosedTerminalTabSnapshot(
+            id: UUID(),
+            projectID: projectID,
+            worktreeID: key.worktreeID,
+            areaID: areaID,
+            projectPath: pane.projectPath,
+            title: tab.title,
+            customTitle: tab.customTitle,
+            colorID: tab.colorID,
+            workingDirectory: pane.currentWorkingDirectory ?? pane.projectPath,
+            startupCommand: pane.startupCommand,
+            lastSubmittedCommand: lastSubmittedCommand,
+            closedSequence: TerminalSessionStore.shared.nextClosedSequence(),
+            closedAt: Date()
+        ))
+    }
+
+    private func closeAndRecordTerminalTab(_ tabID: UUID, areaID: UUID, projectID: UUID) {
+        recordClosedTerminalTab(tabID: tabID, areaID: areaID, projectID: projectID)
+        dispatch(.closeTab(projectID: projectID, areaID: areaID, tabID: tabID))
+        saveTerminalSessions()
     }
 
     func availableLayouts(for projectID: UUID) -> [LayoutDescriptor] {

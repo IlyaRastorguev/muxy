@@ -9,6 +9,9 @@ final class TerminalSessionStore {
 
     private let store: CodableFileStore<TerminalSessionFile>
     private(set) var sessionsByPaneID: [UUID: TerminalSessionSnapshot] = [:]
+    private(set) var closedTerminalTabs: [ClosedTerminalTabSnapshot] = []
+
+    private static let maxClosedTerminalTabs = 50
 
     private init(fileURL: URL = MuxyFileStorage.fileURL(filename: "terminal-sessions.json")) {
         store = CodableFileStore(fileURL: fileURL, options: .pretty)
@@ -19,12 +22,15 @@ final class TerminalSessionStore {
         do {
             guard let file = try store.load() else {
                 sessionsByPaneID = [:]
+                closedTerminalTabs = []
                 return
             }
             sessionsByPaneID = Dictionary(uniqueKeysWithValues: file.sessions.map { ($0.paneID, $0) })
+            closedTerminalTabs = file.closedTerminalTabs
         } catch {
             terminalSessionLogger.error("Failed to load terminal sessions: \(error)")
             sessionsByPaneID = [:]
+            closedTerminalTabs = []
         }
     }
 
@@ -38,6 +44,39 @@ final class TerminalSessionStore {
             .sorted { $0.capturedAt > $1.capturedAt }
             .prefix(SessionRestorePreferences.maxSnapshots)
         saveFile(sessions: Array(snapshots))
+    }
+
+    func recordClosedTerminalTab(_ snapshot: ClosedTerminalTabSnapshot) {
+        closedTerminalTabs.removeAll { existing in
+            existing.projectID == snapshot.projectID
+                && existing.worktreeID == snapshot.worktreeID
+                && existing.areaID == snapshot.areaID
+                && existing.title == snapshot.title
+                && existing.workingDirectory == snapshot.workingDirectory
+                && existing.commandToRestore == snapshot.commandToRestore
+        }
+        closedTerminalTabs.append(snapshot)
+        closedTerminalTabs = closedTerminalTabs
+            .sorted { $0.closedSequence > $1.closedSequence }
+            .prefix(Self.maxClosedTerminalTabs)
+            .map(\.self)
+        saveFile(sessions: Array(sessionsByPaneID.values))
+    }
+
+    func popLastClosedTerminalTab(projectID: UUID, worktreeID: UUID) -> ClosedTerminalTabSnapshot? {
+        guard let index = closedTerminalTabs
+            .enumerated()
+            .filter({ $0.element.projectID == projectID && $0.element.worktreeID == worktreeID })
+            .max(by: { $0.element.closedSequence < $1.element.closedSequence })?
+            .offset
+        else { return nil }
+        let snapshot = closedTerminalTabs.remove(at: index)
+        saveFile(sessions: Array(sessionsByPaneID.values))
+        return snapshot
+    }
+
+    func nextClosedSequence() -> Int64 {
+        (closedTerminalTabs.map(\.closedSequence).max() ?? 0) + 1
     }
 
     private func buildSnapshots(workspaceRoots: [WorktreeKey: SplitNode]) -> [TerminalSessionSnapshot] {
@@ -78,7 +117,8 @@ final class TerminalSessionStore {
         do {
             try store.save(TerminalSessionFile(
                 schemaVersion: TerminalSessionFile.currentSchemaVersion,
-                sessions: sessions
+                sessions: sessions,
+                closedTerminalTabs: closedTerminalTabs
             ))
             sessionsByPaneID = Dictionary(uniqueKeysWithValues: sessions.map { ($0.paneID, $0) })
         } catch {

@@ -81,6 +81,22 @@ final class TabArea: Identifiable {
         insertTab(TerminalTab(pane: pane))
     }
 
+    func restoreClosedTerminalTab(_ snapshot: ClosedTerminalTabSnapshot) {
+        let command = snapshot.commandToRestore
+        let safeCommand = command.flatMap { TerminalSessionRestorePolicy.isSafeToRestore($0) ? $0 : nil }
+        let pane = TerminalPaneState(
+            projectPath: snapshot.projectPath,
+            title: snapshot.title,
+            initialWorkingDirectory: snapshot.workingDirectory,
+            startupCommand: safeCommand.map(TerminalAIRestoreCommand.rewriting),
+            startupCommandInteractive: safeCommand != nil
+        )
+        let tab = TerminalTab(pane: pane)
+        tab.customTitle = snapshot.customTitle
+        tab.colorID = snapshot.colorID
+        insertTab(tab)
+    }
+
     func createVCSTab() {
         insertTab(TerminalTab(vcsState: VCSStateStore.shared.state(for: projectPath)))
     }
