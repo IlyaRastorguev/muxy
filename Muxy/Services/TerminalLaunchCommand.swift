@@ -6,7 +6,8 @@ enum TerminalLaunchCommand {
 
     static func shellCommand(interactive: Bool, shell: String = userShell()) -> String {
         let flags = interactive ? "-l -i" : "-l"
-        return "\(ShellEscaper.escape(shell)) \(flags) -c '\(script)'"
+        let escapedShell = ShellEscaper.escape(shell)
+        return "\(escapedShell) \(flags) -c '\(script)' \(escapedShell)"
     }
 
     private static var script: String {
@@ -14,7 +15,7 @@ enum TerminalLaunchCommand {
             "eval \"$\(environmentKey)\"",
             "muxy_status=$?",
             "if [ $muxy_status -ne 0 ]",
-            "then exec \"${SHELL:-/bin/zsh}\" -l",
+            "then exec \"$0\" -l",
             "else exit $muxy_status",
             "fi",
         ].joined(separator: "; ")
