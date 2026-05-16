@@ -112,7 +112,7 @@ struct ShortcutActionDispatcher {
         case .newProject:
             return false
         case .openProject:
-            ProjectOpenService.openProject(
+            ProjectOpenService.openProjectViaPicker(
                 appState: appState,
                 projectStore: projectStore,
                 worktreeStore: worktreeStore
