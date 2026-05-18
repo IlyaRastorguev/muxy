@@ -3,7 +3,8 @@ import Foundation
 enum SessionRestorePreferences {
     static let enabledKey = "muxy.sessionRestore.enabled"
     static let excludedCommandsKey = "muxy.sessionRestore.excludedCommands"
-    static let maxSnapshotsKey = "muxy.sessionRestore.maxSnapshots"
+
+    static let maxSnapshots = 200
 
     static var isEnabled: Bool {
         get {
@@ -27,14 +28,6 @@ enum SessionRestorePreferences {
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
         }
-    }
-
-    static var maxSnapshots: Int {
-        get {
-            let value = UserDefaults.standard.integer(forKey: maxSnapshotsKey)
-            return value > 0 ? max(20, value) : 200
-        }
-        set { UserDefaults.standard.set(max(20, newValue), forKey: maxSnapshotsKey) }
     }
 
     static let defaultExcludedCommands = [

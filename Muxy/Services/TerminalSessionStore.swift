@@ -93,10 +93,11 @@ final class TerminalSessionStore {
                 && existing.commandToRestore == snapshot.commandToRestore
         }
         closedTerminalTabs.append(snapshot)
-        closedTerminalTabs = closedTerminalTabs
-            .sorted { $0.closedSequence > $1.closedSequence }
-            .prefix(Self.maxClosedTerminalTabs)
-            .map(\.self)
+        closedTerminalTabs = Array(
+            closedTerminalTabs
+                .sorted { $0.closedSequence > $1.closedSequence }
+                .prefix(Self.maxClosedTerminalTabs)
+        )
     }
 
     func popLastClosedTerminalTab(projectID: UUID, worktreeID: UUID) -> ClosedTerminalTabSnapshot? {
