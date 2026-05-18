@@ -62,6 +62,7 @@ final class AppState {
     private let selectionStore: any ActiveProjectSelectionStoring
     private let terminalViews: any TerminalViewRemoving
     private let workspacePersistence: any WorkspacePersisting
+    private let terminalSessions: any TerminalSessionStoring
     var onProjectsEmptied: (([UUID]) -> Void)?
 
     var activeProjectID: UUID?
@@ -94,11 +95,13 @@ final class AppState {
     init(
         selectionStore: any ActiveProjectSelectionStoring,
         terminalViews: any TerminalViewRemoving,
-        workspacePersistence: any WorkspacePersisting
+        workspacePersistence: any WorkspacePersisting,
+        terminalSessions: any TerminalSessionStoring = TerminalSessionStore.shared
     ) {
         self.selectionStore = selectionStore
         self.terminalViews = terminalViews
         self.workspacePersistence = workspacePersistence
+        self.terminalSessions = terminalSessions
     }
 
     func restoreSelection(projects: [Project], worktrees: [UUID: [Worktree]]) {
@@ -113,7 +116,7 @@ final class AppState {
             from: snapshots,
             projects: projects,
             worktrees: worktrees,
-            sessionsByPaneID: TerminalSessionStore.shared.sessionsByPaneID
+            sessionsByPaneID: terminalSessions.sessionsByPaneID
         )
         for entry in restored {
             workspaceRoots[entry.key] = entry.root
@@ -154,7 +157,7 @@ final class AppState {
     }
 
     func saveTerminalSessions() {
-        TerminalSessionStore.shared.save(workspaceRoots: workspaceRoots)
+        terminalSessions.save(workspaceRoots: workspaceRoots)
     }
 
     private func saveSelection() {
@@ -494,7 +497,7 @@ final class AppState {
               let key = activeWorktreeKey(for: projectID),
               workspaceRoots[key] != nil
         else { return false }
-        guard let snapshot = TerminalSessionStore.shared.popLastClosedTerminalTab(
+        guard let snapshot = terminalSessions.popLastClosedTerminalTab(
             projectID: projectID,
             worktreeID: key.worktreeID
         )
@@ -507,16 +510,16 @@ final class AppState {
         return true
     }
 
-    private func recordClosedTerminalTab(tabID: UUID, areaID: UUID, projectID: UUID) {
+    private func closedTerminalTabSnapshot(tabID: UUID, areaID: UUID, projectID: UUID) -> ClosedTerminalTabSnapshot? {
         guard let key = activeWorktreeKey(for: projectID),
               let root = workspaceRoots[key],
               let area = root.findArea(id: areaID),
               let tab = area.tabs.first(where: { $0.id == tabID }),
               let pane = tab.content.pane
-        else { return }
+        else { return nil }
         let lastSubmittedCommand = TerminalCommandTracker.shared.lastSubmittedCommand(for: pane.id)
             ?? pane.activeRestoredCommand
-        TerminalSessionStore.shared.recordClosedTerminalTab(ClosedTerminalTabSnapshot(
+        return ClosedTerminalTabSnapshot(
             id: UUID(),
             projectID: projectID,
             worktreeID: key.worktreeID,
@@ -528,15 +531,19 @@ final class AppState {
             workingDirectory: pane.currentWorkingDirectory ?? pane.projectPath,
             startupCommand: pane.startupCommand,
             lastSubmittedCommand: lastSubmittedCommand,
-            closedSequence: TerminalSessionStore.shared.nextClosedSequence(),
+            closedSequence: terminalSessions.nextClosedSequence(),
             closedAt: Date()
-        ))
+        )
     }
 
     private func closeAndRecordTerminalTab(_ tabID: UUID, areaID: UUID, projectID: UUID) {
-        recordClosedTerminalTab(tabID: tabID, areaID: areaID, projectID: projectID)
+        let closedSnapshot = closedTerminalTabSnapshot(tabID: tabID, areaID: areaID, projectID: projectID)
         dispatch(.closeTab(projectID: projectID, areaID: areaID, tabID: tabID))
-        saveTerminalSessions()
+        if let closedSnapshot {
+            terminalSessions.recordClosedTerminalTab(closedSnapshot, workspaceRoots: workspaceRoots)
+        } else {
+            saveTerminalSessions()
+        }
     }
 
     func availableLayouts(for projectID: UUID) -> [LayoutDescriptor] {

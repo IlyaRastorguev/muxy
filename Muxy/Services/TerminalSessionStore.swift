@@ -4,6 +4,15 @@ import os
 private let terminalSessionLogger = Logger(subsystem: "app.muxy", category: "TerminalSessionStore")
 
 @MainActor
+protocol TerminalSessionStoring: AnyObject {
+    var sessionsByPaneID: [UUID: TerminalSessionSnapshot] { get }
+    func save(workspaceRoots: [WorktreeKey: SplitNode])
+    func recordClosedTerminalTab(_ snapshot: ClosedTerminalTabSnapshot, workspaceRoots: [WorktreeKey: SplitNode])
+    func popLastClosedTerminalTab(projectID: UUID, worktreeID: UUID) -> ClosedTerminalTabSnapshot?
+    func nextClosedSequence() -> Int64
+}
+
+@MainActor
 final class TerminalSessionStore {
     static let shared = TerminalSessionStore()
 
@@ -65,6 +74,16 @@ final class TerminalSessionStore {
     }
 
     func recordClosedTerminalTab(_ snapshot: ClosedTerminalTabSnapshot) {
+        insertClosedTerminalTab(snapshot)
+        saveFile(sessions: Array(sessionsByPaneID.values))
+    }
+
+    func recordClosedTerminalTab(_ snapshot: ClosedTerminalTabSnapshot, workspaceRoots: [WorktreeKey: SplitNode]) {
+        insertClosedTerminalTab(snapshot)
+        saveFile(sessions: sessionsForCurrentPreferences(workspaceRoots: workspaceRoots))
+    }
+
+    private func insertClosedTerminalTab(_ snapshot: ClosedTerminalTabSnapshot) {
         closedTerminalTabs.removeAll { existing in
             existing.projectID == snapshot.projectID
                 && existing.worktreeID == snapshot.worktreeID
@@ -78,7 +97,6 @@ final class TerminalSessionStore {
             .sorted { $0.closedSequence > $1.closedSequence }
             .prefix(Self.maxClosedTerminalTabs)
             .map(\.self)
-        saveFile(sessions: Array(sessionsByPaneID.values))
     }
 
     func popLastClosedTerminalTab(projectID: UUID, worktreeID: UUID) -> ClosedTerminalTabSnapshot? {
@@ -131,6 +149,14 @@ final class TerminalSessionStore {
         return snapshots
     }
 
+    private func sessionsForCurrentPreferences(workspaceRoots: [WorktreeKey: SplitNode]) -> [TerminalSessionSnapshot] {
+        guard SessionRestorePreferences.isEnabled else { return Array(sessionsByPaneID.values) }
+        return Self.retainedSnapshots(
+            buildSnapshots(workspaceRoots: workspaceRoots),
+            maxPerWorktree: SessionRestorePreferences.maxSnapshots
+        )
+    }
+
     private func saveFile(sessions: [TerminalSessionSnapshot]) {
         do {
             try store.save(TerminalSessionFile(
@@ -144,3 +170,5 @@ final class TerminalSessionStore {
         }
     }
 }
+
+extension TerminalSessionStore: TerminalSessionStoring {}
