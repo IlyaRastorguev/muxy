@@ -146,8 +146,8 @@ struct ShortcutActionDispatcher {
         case .findInFiles:
             notificationCenter.post(name: .findInFiles, object: nil)
             return true
-        case .switchWorktree:
-            notificationCenter.post(name: .switchWorktree, object: nil)
+        case .terminalOmnibox:
+            notificationCenter.post(name: .terminalOmnibox, object: nil)
             return true
         case .saveFile:
             notificationCenter.post(name: .saveActiveEditor, object: nil)

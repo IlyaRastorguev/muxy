@@ -1,14 +1,10 @@
 import AppKit
 import SwiftUI
 
-/// A generic command-palette overlay with a search field, a scrollable
-/// results list, and keyboard navigation. Used by Quick Open (files) and
-/// the Worktree Switcher.
 struct PaletteOverlay<Item: Identifiable & Sendable>: View {
     let placeholder: String
     let emptyLabel: String
     let noMatchLabel: String
-    /// Provides items for a given query. Called on every query change.
     let search: (String) async -> [Item]
     let onSelect: (Item) -> Void
     let onDismiss: () -> Void
@@ -26,19 +22,13 @@ struct PaletteOverlay<Item: Identifiable & Sendable>: View {
                 .ignoresSafeArea()
                 .onTapGesture { onDismiss() }
 
-            VStack(spacing: 0) {
-                searchField
-                Divider().overlay(MuxyTheme.border)
-                resultsList
+            OverlayPanel(width: UIMetrics.scaled(500), height: UIMetrics.scaled(380)) {
+                VStack(spacing: 0) {
+                    searchField
+                    Divider().overlay(MuxyTheme.border)
+                    resultsList
+                }
             }
-            .frame(width: UIMetrics.scaled(500), height: UIMetrics.scaled(380))
-            .background(MuxyTheme.bg)
-            .clipShape(RoundedRectangle(cornerRadius: UIMetrics.radiusXL))
-            .overlay(RoundedRectangle(cornerRadius: UIMetrics.radiusXL).stroke(MuxyTheme.border, lineWidth: 1))
-            .shadow(color: .black.opacity(0.4), radius: UIMetrics.scaled(20), y: UIMetrics.scaled(8))
-            .padding(.top, UIMetrics.scaled(60))
-            .frame(maxHeight: .infinity, alignment: .top)
-            .accessibilityAddTraits(.isModal)
         }
         .onAppear {
             performSearch(debounce: false)
@@ -154,6 +144,10 @@ struct PaletteSearchField: NSViewRepresentable {
     let onArrowDown: () -> Void
     var onPageUp: () -> Void = {}
     var onPageDown: () -> Void = {}
+    var onTab: () -> Void = {}
+    var onBackTab: () -> Void = {}
+    var onEmptyBackspace: () -> Void = {}
+    var onOptionCommandKey: (String) -> Bool = { _ in false }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -170,6 +164,7 @@ struct PaletteSearchField: NSViewRepresentable {
         field.placeholderString = placeholder
         field.cell?.sendsActionOnEndEditing = false
         field.onEscape = onEscape
+        field.onOptionCommandKey = onOptionCommandKey
         DispatchQueue.main.async {
             field.window?.makeFirstResponder(field)
         }
@@ -181,8 +176,12 @@ struct PaletteSearchField: NSViewRepresentable {
         if nsView.currentEditor() == nil, nsView.stringValue != text {
             nsView.stringValue = text
         }
+        if nsView.placeholderString != placeholder {
+            nsView.placeholderString = placeholder
+        }
         if let field = nsView as? PaletteNSTextField {
             field.onEscape = onEscape
+            field.onOptionCommandKey = onOptionCommandKey
         }
     }
 
@@ -217,16 +216,17 @@ struct PaletteSearchField: NSViewRepresentable {
                 parent.onArrowDown()
                 return true
             }
-            if commandSelector == #selector(NSResponder.pageUp(_:))
-                || commandSelector == #selector(NSResponder.scrollPageUp(_:))
-            {
-                parent.onPageUp()
+            if commandSelector == #selector(NSResponder.insertTab(_:)) {
+                parent.onTab()
                 return true
             }
-            if commandSelector == #selector(NSResponder.pageDown(_:))
-                || commandSelector == #selector(NSResponder.scrollPageDown(_:))
-            {
-                parent.onPageDown()
+            if commandSelector == #selector(NSResponder.insertBacktab(_:)) {
+                parent.onBackTab()
+                return true
+            }
+            if commandSelector == #selector(NSResponder.deleteBackward(_:)) {
+                guard let field = control as? NSTextField, field.stringValue.isEmpty else { return false }
+                parent.onEmptyBackspace()
                 return true
             }
             return false
@@ -247,12 +247,28 @@ struct PaletteSearchField: NSViewRepresentable {
 
 private final class PaletteNSTextField: NSTextField {
     var onEscape: (() -> Void)?
+    var onOptionCommandKey: ((String) -> Bool)?
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if event.keyCode == 53 {
             onEscape?()
             return true
         }
+        if handleOptionCommandKey(event) {
+            return true
+        }
         return super.performKeyEquivalent(with: event)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if handleOptionCommandKey(event) { return }
+        super.keyDown(with: event)
+    }
+
+    private func handleOptionCommandKey(_ event: NSEvent) -> Bool {
+        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.option, .command],
+              let key = event.charactersIgnoringModifiers?.lowercased()
+        else { return false }
+        return onOptionCommandKey?(key) == true
     }
 }
