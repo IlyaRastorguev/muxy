@@ -173,7 +173,12 @@ struct PaletteSearchField: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSTextField, context: Context) {
         context.coordinator.parent = self
-        if nsView.currentEditor() == nil, nsView.stringValue != text {
+        if let editor = nsView.currentEditor() as? NSTextView {
+            if editor.string != text {
+                editor.string = text
+                editor.selectedRange = NSRange(location: (text as NSString).length, length: 0)
+            }
+        } else if nsView.stringValue != text {
             nsView.stringValue = text
         }
         if nsView.placeholderString != placeholder {
