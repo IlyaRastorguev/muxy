@@ -345,12 +345,14 @@ struct TerminalOmniboxOverlay: View {
     private var footer: some View {
         HStack(spacing: UIMetrics.scaled(18)) {
             TerminalOmniboxHint(symbol: "return", label: returnHintLabel)
-            TerminalOmniboxHint(text: tabHintText, label: tabHintLabel)
-            TerminalOmniboxHint(symbol: "arrow.up.arrow.down", label: "Navigate")
+            HStack(spacing: UIMetrics.scaled(2)) {
+                TerminalOmniboxHint(text: tabHintText)
+                TerminalOmniboxHint(symbol: "arrow.up.arrow.down", label: navigateHintLabel)
+            }
             HStack(spacing: UIMetrics.scaled(2)) {
                 TerminalOmniboxHint(symbol: "option")
                 TerminalOmniboxHint(symbol: "command")
-                TerminalOmniboxHint(text: "p,w,c,h,t", label: "Search scope")
+                TerminalOmniboxHint(text: "p,w,c,h,t", label: "Change scope")
             }
             TerminalOmniboxHint(text: "Esc", label: "Close")
         }
@@ -379,7 +381,7 @@ struct TerminalOmniboxOverlay: View {
         "Tab/⇧Tab"
     }
 
-    private var tabHintLabel: String {
+    private var navigateHintLabel: String {
         "Navigate"
     }
 
