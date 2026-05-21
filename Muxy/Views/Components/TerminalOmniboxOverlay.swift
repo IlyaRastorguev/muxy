@@ -279,6 +279,7 @@ struct TerminalOmniboxOverlay: View {
             .padding(.vertical, UIMetrics.spacing2)
             .background(MuxyTheme.surface, in: Capsule())
             .overlay(Capsule().stroke(MuxyTheme.border, lineWidth: 1))
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .help("Clear project scope")
@@ -302,6 +303,7 @@ struct TerminalOmniboxOverlay: View {
             .padding(.vertical, UIMetrics.spacing2)
             .background(MuxyTheme.surface, in: Capsule())
             .overlay(Capsule().stroke(MuxyTheme.border, lineWidth: 1))
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .help("Clear worktree scope")
@@ -518,6 +520,7 @@ private struct TerminalOmniboxFilterButton: View {
                     RoundedRectangle(cornerRadius: 6)
                         .stroke(isActive ? MuxyTheme.accent.opacity(0.35) : MuxyTheme.border, lineWidth: 1)
                 )
+                .contentShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
         .help(help)
