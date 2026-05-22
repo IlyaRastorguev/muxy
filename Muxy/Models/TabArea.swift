@@ -127,6 +127,17 @@ final class TabArea: Identifiable {
         )))
     }
 
+    func createImageViewerTab(filePath: String) {
+        if let existing = tabs.first(where: { $0.content.imageViewerState?.filePath == filePath }) {
+            selectTab(existing.id)
+            return
+        }
+        insertTab(TerminalTab(imageViewerState: ImageViewerTabState(
+            projectPath: projectPath,
+            filePath: filePath
+        )))
+    }
+
     func createExternalEditorTab(filePath: String, command: String) {
         if let existing = tabs.first(where: { $0.content.pane?.externalEditorFilePath == filePath }) {
             selectTab(existing.id)
