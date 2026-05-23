@@ -329,6 +329,48 @@ struct TabAreaTests {
         #expect(area.activeTab?.isRestorationDeferred == false)
     }
 
+    @Test("closing active tab activates deferred fallback terminal")
+    func closeActiveTabActivatesDeferredFallbackTerminal() {
+        let activePaneID = UUID()
+        let inactivePaneID = UUID()
+        let inactiveTabID = UUID()
+        let snapshot = TabAreaSnapshot(
+            id: UUID(),
+            projectPath: testPath,
+            tabs: [
+                TerminalTabSnapshot(
+                    kind: .terminal,
+                    customTitle: nil,
+                    colorID: nil,
+                    isPinned: false,
+                    projectPath: testPath,
+                    paneTitle: "Active Shell",
+                    paneID: activePaneID
+                ),
+                TerminalTabSnapshot(
+                    kind: .terminal,
+                    id: inactiveTabID,
+                    customTitle: nil,
+                    colorID: nil,
+                    isPinned: false,
+                    projectPath: testPath,
+                    paneTitle: "Sleeping Shell",
+                    paneID: inactivePaneID
+                ),
+            ],
+            activeTabIndex: 0
+        )
+        let area = TabArea(restoring: snapshot, sessionsByPaneID: [
+            activePaneID: terminalSession(paneID: activePaneID, title: "Active Shell"),
+            inactivePaneID: terminalSession(paneID: inactivePaneID, title: "Sleeping Shell"),
+        ])
+
+        _ = area.closeTab(area.tabs[0].id)
+
+        #expect(area.activeTabID == inactiveTabID)
+        #expect(area.activeTab?.isRestorationDeferred == false)
+    }
+
     @Test("createVCSTab adds tab with VCS content")
     func createVCSTab() {
         let area = TabArea(projectPath: testPath)
