@@ -3,15 +3,18 @@ import Foundation
 
 enum TerminalLaunchCommand {
     static let environmentKey = "MUXY_STARTUP_COMMAND"
+    static let restoreCompleteSentinel = "__muxy_restore_done__"
 
     static func shellCommand(
         interactive: Bool,
         keepsShellOpen: Bool = false,
+        dropsToShell: Bool = false,
         shell: String = userShell()
     ) -> String {
         let flags = interactive ? "-l -i" : "-l"
         let escapedShell = ShellEscaper.escape(shell)
-        return "\(escapedShell) \(flags) -c '\(script(keepsShellOpen: keepsShellOpen))' \(escapedShell)"
+        let activeScript = dropsToShell ? persistentScript : script(keepsShellOpen: keepsShellOpen)
+        return "\(escapedShell) \(flags) -c '\(activeScript)' \(escapedShell)"
     }
 
     private static func script(keepsShellOpen: Bool) -> String {
@@ -24,6 +27,14 @@ enum TerminalLaunchCommand {
         segments.append(keepsShellOpen ? "else exec \"$0\" -l" : "else exit $muxy_status")
         segments.append("fi")
         return segments.joined(separator: "; ")
+    }
+
+    private static var persistentScript: String {
+        [
+            "eval \"$\(environmentKey)\"",
+            "printf \"\\033]0;\(restoreCompleteSentinel)%s\\007\" \"${PWD##*/}\"",
+            "exec \"$0\" -l",
+        ].joined(separator: "; ")
     }
 
     private static func userShell() -> String {

@@ -135,9 +135,9 @@ final class TerminalSessionStore {
                     guard let pane = tab.content.pane else { continue }
                     let view = TerminalViewRegistry.shared.existingView(for: pane.id)
                     let isRunning = view.map { $0.needsConfirmQuit() } ?? false
-                    let hasRestoredCommand = pane.activeRestoredCommand != nil
+                    let hasRestoredCommand = pane.activeRestoredCommand != nil && !pane.restoredCommandFinished
                     let trackedCommand = TerminalCommandTracker.shared.lastSubmittedCommand(for: pane.id)
-                        ?? pane.activeRestoredCommand
+                        ?? (pane.restoredCommandFinished ? nil : pane.activeRestoredCommand)
                     let activity: TerminalSessionSnapshot.Activity = isRunning || hasRestoredCommand ? .running : .idle
                     let cwd = pane.currentWorkingDirectory ?? pane.projectPath
                     snapshots.append(TerminalSessionSnapshot(

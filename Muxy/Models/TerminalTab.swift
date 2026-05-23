@@ -72,6 +72,10 @@ final class TerminalTab: Identifiable {
 
     var kind: Kind { content.kind }
 
+    var isRestorationDeferred: Bool {
+        content.pane?.isRestorationDeferred ?? false
+    }
+
     var title: String {
         if let customTitle {
             return customTitle
@@ -115,7 +119,11 @@ final class TerminalTab: Identifiable {
         content = .imageViewer(imageViewerState)
     }
 
-    init(restoring snapshot: TerminalTabSnapshot, restoredSession: TerminalSessionSnapshot? = nil) {
+    init(
+        restoring snapshot: TerminalTabSnapshot,
+        restoredSession: TerminalSessionSnapshot? = nil,
+        isRestorationDeferred: Bool = false
+    ) {
         id = snapshot.id
         customTitle = snapshot.customTitle
         colorID = snapshot.colorID
@@ -131,7 +139,8 @@ final class TerminalTab: Identifiable {
                 projectPath: snapshot.projectPath,
                 title: snapshot.paneTitle,
                 initialWorkingDirectory: restoredWorkingDirectory,
-                restoredSession: restoredSession
+                restoredSession: restoredSession,
+                isRestorationDeferred: isRestorationDeferred && restoredSession != nil
             ))
         case .vcs:
             content = .vcs(VCSStateStore.shared.state(for: snapshot.projectPath))
@@ -173,6 +182,10 @@ final class TerminalTab: Identifiable {
             filePath: content.editorState?.filePath ?? content.imageViewerState?.filePath,
             currentWorkingDirectory: content.pane?.currentWorkingDirectory
         )
+    }
+
+    func activateDeferredRestoration() {
+        content.pane?.activateDeferredRestoration()
     }
 
     private static func restoredWorkingDirectory(_ path: String?, projectPath: String) -> String? {

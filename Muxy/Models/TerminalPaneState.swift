@@ -4,6 +4,14 @@ struct TerminalPaneLaunch: Equatable {
     let command: String?
     let interactive: Bool
     let closesOnCommandExit: Bool
+    let dropsToShell: Bool
+
+    init(command: String?, interactive: Bool, closesOnCommandExit: Bool, dropsToShell: Bool = false) {
+        self.command = command
+        self.interactive = interactive
+        self.closesOnCommandExit = closesOnCommandExit
+        self.dropsToShell = dropsToShell
+    }
 }
 
 @MainActor
@@ -19,6 +27,8 @@ final class TerminalPaneState: Identifiable {
     let externalEditorFilePath: String?
     let restoredSession: TerminalSessionSnapshot?
     var activeRestoredCommand: String?
+    var restoredCommandFinished = false
+    var isRestorationDeferred: Bool
     var restoreDecision: TerminalSessionRestoreDecision = .none
     var restoreConsumed = false
     let searchState = TerminalSearchState()
@@ -34,7 +44,8 @@ final class TerminalPaneState: Identifiable {
         startupCommandInteractive: Bool = false,
         closesOnStartupCommandExit: Bool = true,
         externalEditorFilePath: String? = nil,
-        restoredSession: TerminalSessionSnapshot? = nil
+        restoredSession: TerminalSessionSnapshot? = nil,
+        isRestorationDeferred: Bool = false
     ) {
         self.id = id
         self.projectPath = projectPath
@@ -45,6 +56,7 @@ final class TerminalPaneState: Identifiable {
         self.closesOnStartupCommandExit = closesOnStartupCommandExit
         self.externalEditorFilePath = externalEditorFilePath
         self.restoredSession = restoredSession
+        self.isRestorationDeferred = isRestorationDeferred
         branchObserver.update(repoPath: initialWorkingDirectory ?? projectPath, refresh: false)
         if let restoredSession {
             let decision = TerminalSessionRestorePolicy.decision(for: restoredSession)
@@ -53,6 +65,10 @@ final class TerminalPaneState: Identifiable {
                 activeRestoredCommand = command
             }
         }
+    }
+
+    func activateDeferredRestoration() {
+        isRestorationDeferred = false
     }
 
     func consumeRestoredLaunch() -> TerminalPaneLaunch {
@@ -72,7 +88,7 @@ final class TerminalPaneState: Identifiable {
                 closesOnCommandExit: closesOnStartupCommandExit
             )
         case let .command(command):
-            return TerminalPaneLaunch(command: command, interactive: true, closesOnCommandExit: true)
+            return TerminalPaneLaunch(command: command, interactive: true, closesOnCommandExit: false, dropsToShell: true)
         }
     }
 

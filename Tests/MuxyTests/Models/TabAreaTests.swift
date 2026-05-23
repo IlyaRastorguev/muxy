@@ -248,6 +248,87 @@ struct TabAreaTests {
         #expect(imageViewer.kind == .imageViewer)
     }
 
+    @Test("restored terminal tabs defer inactive sessions and keep snapshot title")
+    func restoredTerminalTabsDeferInactiveSessions() {
+        let activePaneID = UUID()
+        let inactivePaneID = UUID()
+        let snapshot = TabAreaSnapshot(
+            id: UUID(),
+            projectPath: testPath,
+            tabs: [
+                TerminalTabSnapshot(
+                    kind: .terminal,
+                    customTitle: nil,
+                    colorID: nil,
+                    isPinned: false,
+                    projectPath: testPath,
+                    paneTitle: "Active Shell",
+                    paneID: activePaneID
+                ),
+                TerminalTabSnapshot(
+                    kind: .terminal,
+                    customTitle: nil,
+                    colorID: nil,
+                    isPinned: false,
+                    projectPath: testPath,
+                    paneTitle: "Sleeping Shell",
+                    paneID: inactivePaneID
+                ),
+            ],
+            activeTabIndex: 0
+        )
+        let area = TabArea(restoring: snapshot, sessionsByPaneID: [
+            activePaneID: terminalSession(paneID: activePaneID, title: "Active Shell"),
+            inactivePaneID: terminalSession(paneID: inactivePaneID, title: "Sleeping Shell"),
+        ])
+
+        #expect(area.tabs[0].isRestorationDeferred == false)
+        #expect(area.tabs[1].isRestorationDeferred == true)
+        #expect(area.tabs[1].title == "Sleeping Shell")
+    }
+
+    @Test("selectTab activates deferred restored terminal")
+    func selectTabActivatesDeferredRestoredTerminal() {
+        let activePaneID = UUID()
+        let inactivePaneID = UUID()
+        let inactiveTabID = UUID()
+        let snapshot = TabAreaSnapshot(
+            id: UUID(),
+            projectPath: testPath,
+            tabs: [
+                TerminalTabSnapshot(
+                    kind: .terminal,
+                    customTitle: nil,
+                    colorID: nil,
+                    isPinned: false,
+                    projectPath: testPath,
+                    paneTitle: "Active Shell",
+                    paneID: activePaneID
+                ),
+                TerminalTabSnapshot(
+                    kind: .terminal,
+                    id: inactiveTabID,
+                    customTitle: nil,
+                    colorID: nil,
+                    isPinned: false,
+                    projectPath: testPath,
+                    paneTitle: "Sleeping Shell",
+                    paneID: inactivePaneID
+                ),
+            ],
+            activeTabIndex: 0
+        )
+        let area = TabArea(restoring: snapshot, sessionsByPaneID: [
+            activePaneID: terminalSession(paneID: activePaneID, title: "Active Shell"),
+            inactivePaneID: terminalSession(paneID: inactivePaneID, title: "Sleeping Shell"),
+        ])
+
+        area.selectTab(inactiveTabID)
+
+        #expect(area.activeTabID == inactiveTabID)
+        #expect(area.activeTab?.isRestorationDeferred == false)
+    }
+
     @Test("createVCSTab adds tab with VCS content")
     func createVCSTab() {
         let area = TabArea(projectPath: testPath)
@@ -394,6 +475,24 @@ struct TabAreaTests {
         let originalID = area.activeTabID
         area.selectTabByIndex(99)
         #expect(area.activeTabID == originalID)
+    }
+
+    private func terminalSession(paneID: UUID, title: String) -> TerminalSessionSnapshot {
+        TerminalSessionSnapshot(
+            id: UUID(),
+            projectID: UUID(),
+            worktreeID: UUID(),
+            paneID: paneID,
+            tabID: UUID(),
+            areaID: UUID(),
+            projectPath: testPath,
+            title: title,
+            workingDirectory: testPath,
+            startupCommand: nil,
+            lastSubmittedCommand: "nvim Package.swift",
+            activity: .running,
+            capturedAt: Date()
+        )
     }
 
     @Test("selectNextTab wraps around")

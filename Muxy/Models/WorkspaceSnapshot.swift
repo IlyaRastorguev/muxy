@@ -181,14 +181,14 @@ enum WorkspaceRestorer {
             guard projectByID[snapshot.projectID] != nil else { continue }
             let worktreeList = worktrees[snapshot.projectID] ?? []
             guard let targetWorktree = resolveWorktree(for: snapshot, in: worktreeList) else { continue }
-            let root = restoreSplitNode(from: snapshot.root, sessionsByPaneID: sessionsByPaneID)
+            let focusedID = focusedAreaID(for: snapshot)
+            let root = restoreSplitNode(
+                from: snapshot.root,
+                sessionsByPaneID: sessionsByPaneID,
+                immediateAreaID: focusedID
+            )
             let areas = root.allAreas()
             guard !areas.isEmpty else { continue }
-            let focusedID: UUID = if let areaID = snapshot.focusedAreaID, root.findArea(id: areaID) != nil {
-                areaID
-            } else {
-                areas[0].id
-            }
             let key = WorktreeKey(projectID: snapshot.projectID, worktreeID: targetWorktree.id)
             results.append(RestoredWorkspace(key: key, root: root, focusedAreaID: focusedID))
         }
@@ -207,6 +207,13 @@ enum WorkspaceRestorer {
             return match
         }
         return worktrees.first(where: { $0.isPrimary }) ?? worktrees.first
+    }
+
+    private static func focusedAreaID(for snapshot: WorkspaceSnapshot) -> UUID {
+        if let focusedAreaID = snapshot.focusedAreaID, snapshot.root.containsArea(id: focusedAreaID) {
+            return focusedAreaID
+        }
+        return snapshot.root.firstAreaID ?? UUID()
     }
 
     static func snapshotAll(
@@ -232,14 +239,27 @@ enum WorkspaceRestorer {
 
     private static func restoreSplitNode(
         from snapshot: SplitNodeSnapshot,
-        sessionsByPaneID: [UUID: TerminalSessionSnapshot]
+        sessionsByPaneID: [UUID: TerminalSessionSnapshot],
+        immediateAreaID: UUID
     ) -> SplitNode {
         switch snapshot {
         case let .tabArea(areaSnapshot):
-            return .tabArea(TabArea(restoring: areaSnapshot, sessionsByPaneID: sessionsByPaneID))
+            return .tabArea(TabArea(
+                restoring: areaSnapshot,
+                sessionsByPaneID: sessionsByPaneID,
+                restoreActiveTab: areaSnapshot.id == immediateAreaID
+            ))
         case let .split(branchSnapshot):
-            let first = restoreSplitNode(from: branchSnapshot.first, sessionsByPaneID: sessionsByPaneID)
-            let second = restoreSplitNode(from: branchSnapshot.second, sessionsByPaneID: sessionsByPaneID)
+            let first = restoreSplitNode(
+                from: branchSnapshot.first,
+                sessionsByPaneID: sessionsByPaneID,
+                immediateAreaID: immediateAreaID
+            )
+            let second = restoreSplitNode(
+                from: branchSnapshot.second,
+                sessionsByPaneID: sessionsByPaneID,
+                immediateAreaID: immediateAreaID
+            )
             let direction: SplitDirection = switch branchSnapshot.direction {
             case .horizontal: .horizontal
             case .vertical: .vertical
@@ -268,6 +288,26 @@ enum WorkspaceRestorer {
                 first: snapshotSplitNode(branch.first),
                 second: snapshotSplitNode(branch.second)
             ))
+        }
+    }
+}
+
+private extension SplitNodeSnapshot {
+    var firstAreaID: UUID? {
+        switch self {
+        case let .tabArea(area):
+            area.id
+        case let .split(branch):
+            branch.first.firstAreaID ?? branch.second.firstAreaID
+        }
+    }
+
+    func containsArea(id: UUID) -> Bool {
+        switch self {
+        case let .tabArea(area):
+            area.id == id
+        case let .split(branch):
+            branch.first.containsArea(id: id) || branch.second.containsArea(id: id)
         }
     }
 }

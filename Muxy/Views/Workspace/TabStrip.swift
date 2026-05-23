@@ -11,6 +11,7 @@ struct PaneTabStrip: View {
         let isPinned: Bool
         let hasCustomTitle: Bool
         let colorID: String?
+        let isRestorationDeferred: Bool
     }
 
     let areaID: UUID
@@ -55,7 +56,8 @@ struct PaneTabStrip: View {
                 kind: tab.kind,
                 isPinned: tab.isPinned,
                 hasCustomTitle: tab.customTitle != nil,
-                colorID: tab.colorID
+                colorID: tab.colorID,
+                isRestorationDeferred: tab.isRestorationDeferred
             )
         }
     }
@@ -639,6 +641,7 @@ private struct TabCell: View {
         case .diffViewer: label += ", Diff Viewer"
         case .imageViewer: label += ", Image Viewer"
         }
+        if tab.isRestorationDeferred { label += ", Not Restored" }
         if tab.isPinned { label += ", Pinned" }
         if hasUnread { label += ", Unread" }
         return label
@@ -650,6 +653,9 @@ private struct TabCell: View {
             TerminalProgressCircle(progress: progress)
                 .frame(width: UIMetrics.iconSM, height: UIMetrics.iconSM)
                 .transition(.opacity)
+        } else if tab.isRestorationDeferred {
+            Image(systemName: "moon.zzz.fill")
+                .font(.system(size: UIMetrics.fontBody, weight: .semibold))
         } else if tab.isPinned {
             Image(systemName: "pin.fill")
                 .font(.system(size: UIMetrics.fontCaption, weight: .semibold))
