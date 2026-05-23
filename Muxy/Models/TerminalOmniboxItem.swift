@@ -1,5 +1,13 @@
 import Foundation
 
+enum TerminalOmniboxLaunchScope: String {
+    case projects
+    case worktrees
+    case openTabs
+    case commandShortcuts
+    case history
+}
+
 struct OpenTerminalTabItem: Identifiable, Equatable {
     let projectID: UUID
     let worktreeID: UUID
@@ -49,7 +57,6 @@ enum TerminalOmniboxItem: Identifiable, Equatable {
     case openTab(OpenTerminalTabItem)
     case closedTab(ClosedTerminalTabSnapshot)
     case commandShortcut(CommandShortcut)
-    case typedCommand(String)
 
     var id: String {
         switch self {
@@ -63,8 +70,6 @@ enum TerminalOmniboxItem: Identifiable, Equatable {
             "closed-\(snapshot.id.uuidString)"
         case let .commandShortcut(shortcut):
             "shortcut-\(shortcut.id.uuidString)"
-        case let .typedCommand(command):
-            "typed-\(command)"
         }
     }
 
@@ -80,8 +85,6 @@ enum TerminalOmniboxItem: Identifiable, Equatable {
             snapshot.title
         case let .commandShortcut(shortcut):
             shortcut.displayName
-        case let .typedCommand(command):
-            command
         }
     }
 
@@ -97,8 +100,6 @@ enum TerminalOmniboxItem: Identifiable, Equatable {
             snapshot.commandToRestore ?? snapshot.workingDirectory
         case let .commandShortcut(shortcut):
             shortcut.trimmedCommand
-        case .typedCommand:
-            "Run in new tab"
         }
     }
 
@@ -114,8 +115,6 @@ enum TerminalOmniboxItem: Identifiable, Equatable {
             "History"
         case .commandShortcut:
             "Custom Commands"
-        case .typedCommand:
-            "New Command"
         }
     }
 
@@ -131,8 +130,6 @@ enum TerminalOmniboxItem: Identifiable, Equatable {
             "clock.arrow.circlepath"
         case .commandShortcut:
             "command"
-        case .typedCommand:
-            "plus"
         }
     }
 
@@ -152,8 +149,6 @@ enum TerminalOmniboxItem: Identifiable, Equatable {
             ].compactMap(\.self).joined(separator: " ")
         case let .commandShortcut(shortcut):
             [shortcut.displayName, shortcut.trimmedCommand].joined(separator: " ")
-        case let .typedCommand(command):
-            command
         }
     }
 }

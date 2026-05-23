@@ -107,6 +107,7 @@ struct MainWindow: View {
     @State private var showQuickOpen = false
     @State private var showFindInFiles = false
     @State private var showTerminalOmnibox = false
+    @State private var terminalOmniboxLaunchScope = TerminalOmniboxLaunchScope.openTabs
     @State private var showProjectPicker = false
     @State private var overlayAnimatingOut = false
     @State private var isFullScreen = false
@@ -191,7 +192,13 @@ struct MainWindow: View {
         .onReceive(NotificationCenter.default.publisher(for: .openProjectPicker)) { _ in
             showProjectPicker = true
         }
-        .onReceive(NotificationCenter.default.publisher(for: .terminalOmnibox)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .terminalOmnibox)) { notification in
+            let launchScope = terminalOmniboxScope(from: notification)
+            if showTerminalOmnibox, launchScope != terminalOmniboxLaunchScope {
+                terminalOmniboxLaunchScope = launchScope
+                return
+            }
+            terminalOmniboxLaunchScope = launchScope
             showTerminalOmnibox.toggle()
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleSidebar)) { _ in
@@ -604,6 +611,7 @@ struct MainWindow: View {
                 activeProjectID: appState.activeProjectID,
                 activeWorktreeID: appState.activeProjectID.flatMap { appState.activeWorktreeID[$0] },
                 commandProjectIDs: terminalOmniboxCommandProjectIDs,
+                launchScope: terminalOmniboxLaunchScope,
                 onSelect: { item, scopedProjectID, scopedWorktreeID in
                     showTerminalOmnibox = false
                     handleTerminalOmniboxSelection(
@@ -652,9 +660,9 @@ struct MainWindow: View {
     ) {
         switch item {
         case let .project(project):
-            selectOmniboxProject(project.projectID)
-        case .worktree:
-            break
+            _ = selectOmniboxProject(project.projectID)
+        case let .worktree(worktree):
+            _ = selectOmniboxProject(worktree.projectID, worktreeID: worktree.worktreeID)
         case let .openTab(tab):
             _ = selectOmniboxProject(tab.projectID, worktreeID: tab.worktreeID)
             appState.dispatch(.selectTab(projectID: tab.projectID, areaID: tab.areaID, tabID: tab.tabID))
@@ -665,11 +673,14 @@ struct MainWindow: View {
             guard let projectID = scopedProjectID else { return }
             _ = selectOmniboxProject(projectID, worktreeID: scopedWorktreeID)
             appState.createCommandTab(projectID: projectID, shortcut: shortcut)
-        case let .typedCommand(command):
-            guard let projectID = scopedProjectID else { return }
-            _ = selectOmniboxProject(projectID, worktreeID: scopedWorktreeID)
-            appState.createCommandTab(projectID: projectID, command: command)
         }
+    }
+
+    private func terminalOmniboxScope(from notification: Notification) -> TerminalOmniboxLaunchScope {
+        guard let rawValue = notification.userInfo?["launchScope"] as? String,
+              let scope = TerminalOmniboxLaunchScope(rawValue: rawValue)
+        else { return .openTabs }
+        return scope
     }
 
     private var terminalOmniboxProjects: [TerminalOmniboxProjectItem] {

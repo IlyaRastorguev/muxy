@@ -147,7 +147,7 @@ struct PaletteSearchField: NSViewRepresentable {
     var onTab: () -> Void = {}
     var onBackTab: () -> Void = {}
     var onEmptyBackspace: () -> Void = {}
-    var onOptionCommandKey: (String) -> Bool = { _ in false }
+    var onControlKey: (String) -> Bool = { _ in false }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -164,7 +164,7 @@ struct PaletteSearchField: NSViewRepresentable {
         field.placeholderString = placeholder
         field.cell?.sendsActionOnEndEditing = false
         field.onEscape = onEscape
-        field.onOptionCommandKey = onOptionCommandKey
+        field.onControlKey = onControlKey
         DispatchQueue.main.async {
             field.window?.makeFirstResponder(field)
         }
@@ -186,7 +186,7 @@ struct PaletteSearchField: NSViewRepresentable {
         }
         if let field = nsView as? PaletteNSTextField {
             field.onEscape = onEscape
-            field.onOptionCommandKey = onOptionCommandKey
+            field.onControlKey = onControlKey
         }
     }
 
@@ -252,28 +252,28 @@ struct PaletteSearchField: NSViewRepresentable {
 
 private final class PaletteNSTextField: NSTextField {
     var onEscape: (() -> Void)?
-    var onOptionCommandKey: ((String) -> Bool)?
+    var onControlKey: ((String) -> Bool)?
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if event.keyCode == 53 {
             onEscape?()
             return true
         }
-        if handleOptionCommandKey(event) {
+        if handleControlKey(event) {
             return true
         }
         return super.performKeyEquivalent(with: event)
     }
 
     override func keyDown(with event: NSEvent) {
-        if handleOptionCommandKey(event) { return }
+        if handleControlKey(event) { return }
         super.keyDown(with: event)
     }
 
-    private func handleOptionCommandKey(_ event: NSEvent) -> Bool {
-        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.option, .command],
+    private func handleControlKey(_ event: NSEvent) -> Bool {
+        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.control],
               let key = event.charactersIgnoringModifiers?.lowercased()
         else { return false }
-        return onOptionCommandKey?(key) == true
+        return onControlKey?(key) == true
     }
 }

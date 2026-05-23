@@ -304,7 +304,15 @@ final class AppState {
     }
 
     func createProjectCommandTab(projectID: UUID, name: String, command: String) -> CreatedCommandTab? {
-        dispatch(.createCommandTab(projectID: projectID, areaID: nil, name: name, command: command))
+        dispatch(.createCommandTab(
+            CommandTabRequest(
+                projectID: projectID,
+                areaID: nil,
+                name: name,
+                command: command,
+                closesOnCommandExit: false
+            )
+        ))
         guard let key = activeWorktreeKey(for: projectID),
               let areaID = focusedAreaID[key],
               let area = workspaceRoots[key]?.findArea(id: areaID),

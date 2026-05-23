@@ -1,11 +1,5 @@
 import SwiftUI
 
-private enum TerminalOmniboxQuickFilter: Equatable {
-    case commands
-    case history
-    case openTabs
-}
-
 struct TerminalOmniboxOverlay: View {
     let projects: [TerminalOmniboxProjectItem]
     let worktrees: [TerminalOmniboxWorktreeItem]
@@ -15,109 +9,45 @@ struct TerminalOmniboxOverlay: View {
     let activeProjectID: UUID?
     let activeWorktreeID: UUID?
     let commandProjectIDs: Set<UUID>
+    let launchScope: TerminalOmniboxLaunchScope
     let onSelect: (TerminalOmniboxItem, UUID?, UUID?) -> Void
     let onDismiss: () -> Void
 
     @State private var query = ""
     @State private var highlightedIndex: Int? = 0
-    @State private var scopedProjectID: UUID?
-    @State private var scopedWorktreeID: UUID?
-    @State private var quickFilter: TerminalOmniboxQuickFilter?
 
     private var trimmedQuery: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private var scopedProject: TerminalOmniboxProjectItem? {
-        guard let scopedProjectID else { return nil }
-        return projects.first { $0.projectID == scopedProjectID }
-    }
-
-    private var scopedWorktree: TerminalOmniboxWorktreeItem? {
-        guard let scopedWorktreeID else { return nil }
-        return worktrees.first { $0.worktreeID == scopedWorktreeID }
-    }
-
-    private var scopedCanCreateCommand: Bool {
-        guard let scopedProjectID, scopedWorktreeID != nil else { return false }
-        return commandProjectIDs.contains(scopedProjectID)
-    }
-
     private var displayList: [TerminalOmniboxItem] {
-        var items = baseItems
-        if quickFilter == nil, scopedCanCreateCommand, !trimmedQuery.isEmpty {
-            let typed = TerminalOmniboxItem.typedCommand(trimmedQuery)
-            if !items.contains(typed) {
-                items.append(typed)
-            }
-        }
-        return items
+        let items = baseItems
+        guard !trimmedQuery.isEmpty else { return items }
+        return items.filter { $0.searchKey.localizedCaseInsensitiveContains(trimmedQuery) }
     }
 
     private var baseItems: [TerminalOmniboxItem] {
-        if let quickFilter {
-            return filteredScopedItems(quickFilter)
-        }
-        if scopedProjectID != nil, scopedWorktreeID != nil {
-            return allScopedItems()
-        }
-        if let scopedProjectID {
-            let scopedWorktrees = worktrees
-                .filter { $0.projectID == scopedProjectID }
-            guard !trimmedQuery.isEmpty else {
-                return scopedWorktrees.map(TerminalOmniboxItem.worktree)
-            }
-            return scopedWorktrees
-                .filter { $0.searchKey.localizedCaseInsensitiveContains(trimmedQuery) }
-                .map(TerminalOmniboxItem.worktree)
-        }
-        return projectItems
-    }
-
-    private var projectItems: [TerminalOmniboxItem] {
-        let source = trimmedQuery.isEmpty && scopedProjectID != nil ? [] : projects
-        return source
-            .filter { trimmedQuery.isEmpty || $0.searchKey.localizedCaseInsensitiveContains(trimmedQuery) }
-            .map(TerminalOmniboxItem.project)
-    }
-
-    private func allScopedItems() -> [TerminalOmniboxItem] {
-        guard let scopedProjectID, let scopedWorktreeID else { return [] }
-        var items = openTabs
-            .filter { $0.projectID == scopedProjectID && $0.worktreeID == scopedWorktreeID }
-            .map(TerminalOmniboxItem.openTab)
-            + closedTabs
-            .filter { $0.projectID == scopedProjectID && $0.worktreeID == scopedWorktreeID }
-            .map(TerminalOmniboxItem.closedTab)
-        if commandProjectIDs.contains(scopedProjectID) {
-            items += commandShortcuts
-                .filter { !$0.trimmedCommand.isEmpty }
-                .map(TerminalOmniboxItem.commandShortcut)
-        }
-        guard !trimmedQuery.isEmpty else { return items }
-        return items.filter { $0.searchKey.localizedCaseInsensitiveContains(trimmedQuery) }
-    }
-
-    private func filteredScopedItems(_ filter: TerminalOmniboxQuickFilter) -> [TerminalOmniboxItem] {
-        guard let scopedProjectID, let scopedWorktreeID else { return [] }
-        let items: [TerminalOmniboxItem]
-        switch filter {
-        case .commands:
-            guard commandProjectIDs.contains(scopedProjectID) else { return [] }
-            items = commandShortcuts
+        switch launchScope {
+        case .projects:
+            return projects.map(TerminalOmniboxItem.project)
+        case .worktrees:
+            return worktrees.map(TerminalOmniboxItem.worktree)
+        case .openTabs:
+            guard let activeProjectID, let activeWorktreeID else { return [] }
+            return openTabs
+                .filter { $0.projectID == activeProjectID && $0.worktreeID == activeWorktreeID }
+                .map(TerminalOmniboxItem.openTab)
+        case .commandShortcuts:
+            guard activeProjectID.map(commandProjectIDs.contains) == true else { return [] }
+            return commandShortcuts
                 .filter { !$0.trimmedCommand.isEmpty }
                 .map(TerminalOmniboxItem.commandShortcut)
         case .history:
-            items = closedTabs
-                .filter { $0.projectID == scopedProjectID && $0.worktreeID == scopedWorktreeID }
+            guard let activeProjectID, let activeWorktreeID else { return [] }
+            return closedTabs
+                .filter { $0.projectID == activeProjectID && $0.worktreeID == activeWorktreeID }
                 .map(TerminalOmniboxItem.closedTab)
-        case .openTabs:
-            items = openTabs
-                .filter { $0.projectID == scopedProjectID && $0.worktreeID == scopedWorktreeID }
-                .map(TerminalOmniboxItem.openTab)
         }
-        guard !trimmedQuery.isEmpty else { return items }
-        return items.filter { $0.searchKey.localizedCaseInsensitiveContains(trimmedQuery) }
     }
 
     var body: some View {
@@ -137,23 +67,13 @@ struct TerminalOmniboxOverlay: View {
             }
         }
         .onAppear {
-            scopedProjectID = activeProjectID
-            scopedWorktreeID = activeProjectID != nil ? activeWorktreeID : nil
-            highlightedIndex = displayList.isEmpty ? nil : 0
+            applyLaunchScope()
         }
         .onChange(of: query) {
             highlightedIndex = displayList.isEmpty ? nil : 0
         }
-        .onChange(of: scopedProjectID) {
-            quickFilter = nil
-            highlightedIndex = displayList.isEmpty ? nil : 0
-        }
-        .onChange(of: scopedWorktreeID) {
-            quickFilter = nil
-            highlightedIndex = displayList.isEmpty ? nil : 0
-        }
-        .onChange(of: quickFilter) {
-            highlightedIndex = displayList.isEmpty ? nil : 0
+        .onChange(of: launchScope) {
+            applyLaunchScope()
         }
         .onChange(of: openTabs.count) {
             highlightedIndex = displayList.isEmpty ? nil : min(highlightedIndex ?? 0, displayList.count - 1)
@@ -169,12 +89,6 @@ struct TerminalOmniboxOverlay: View {
                 .font(.system(size: UIMetrics.fontEmphasis, weight: .semibold))
                 .foregroundStyle(MuxyTheme.fgMuted)
                 .accessibilityHidden(true)
-            if let scopedProject {
-                scopedProjectChip(scopedProject)
-            }
-            if let scopedWorktree {
-                scopedWorktreeChip(scopedWorktree)
-            }
             PaletteSearchField(
                 text: $query,
                 placeholder: searchPlaceholder,
@@ -183,130 +97,28 @@ struct TerminalOmniboxOverlay: View {
                 onArrowUp: { moveHighlight(-1) },
                 onArrowDown: { moveHighlight(1) },
                 onTab: { handleTab() },
-                onBackTab: { handleBackTab() },
-                onEmptyBackspace: { handleEmptyBackspace() },
-                onOptionCommandKey: { handleOptionKey($0) }
+                onBackTab: { handleBackTab() }
             )
             .frame(height: UIMetrics.scaled(28))
-            quickFilterControls
         }
         .frame(height: UIMetrics.scaled(28))
         .padding(.horizontal, UIMetrics.spacing6)
         .padding(.vertical, UIMetrics.spacing5)
     }
 
-    private var quickFilterControls: some View {
-        HStack(spacing: UIMetrics.spacing2) {
-            TerminalOmniboxFilterButton(
-                symbol: "folder",
-                isActive: scopedProjectID == nil && quickFilter == nil,
-                help: "⌥⌘P Project"
-            ) {
-                activateProjectSelection()
-            }
-            TerminalOmniboxFilterButton(
-                symbol: "arrow.triangle.branch",
-                isActive: scopedProjectID != nil && scopedWorktreeID == nil && quickFilter == nil,
-                help: "⌥⌘W Worktree"
-            ) {
-                activateWorktreeSelection()
-            }
-            TerminalOmniboxFilterButton(
-                symbol: "command",
-                isActive: quickFilter == .commands,
-                help: "⌥⌘C Commands"
-            ) {
-                toggleQuickFilter(.commands)
-            }
-            TerminalOmniboxFilterButton(
-                symbol: "clock.arrow.circlepath",
-                isActive: quickFilter == .history,
-                help: "⌥⌘H History"
-            ) {
-                toggleQuickFilter(.history)
-            }
-            TerminalOmniboxFilterButton(
-                symbol: "terminal",
-                isActive: quickFilter == .openTabs,
-                help: "⌥⌘T Open Tabs"
-            ) {
-                toggleQuickFilter(.openTabs)
-            }
-        }
-    }
-
     private var searchPlaceholder: String {
-        if let quickFilter {
-            return quickFilterPlaceholder(quickFilter)
-        }
-        if scopedProject == nil {
-            return "Search project..."
-        }
-        if scopedWorktree == nil {
-            return "Search worktree..."
-        }
-        return "Search tabs, history, or run command..."
-    }
-
-    private func quickFilterPlaceholder(_ filter: TerminalOmniboxQuickFilter) -> String {
-        switch filter {
-        case .commands:
+        switch launchScope {
+        case .projects:
+            "Search project..."
+        case .worktrees:
+            "Search worktree..."
+        case .openTabs:
+            "Search open tabs..."
+        case .commandShortcuts:
             "Search custom commands..."
         case .history:
             "Search history..."
-        case .openTabs:
-            "Search open tabs..."
         }
-    }
-
-    private func scopedProjectChip(_ project: TerminalOmniboxProjectItem) -> some View {
-        Button {
-            activateProjectSelection()
-        } label: {
-            HStack(spacing: UIMetrics.scaled(5)) {
-                Image(systemName: "folder")
-                    .font(.system(size: UIMetrics.fontXS, weight: .semibold))
-                Text(project.name)
-                    .font(.system(size: UIMetrics.fontFootnote, weight: .medium))
-                    .lineLimit(1)
-                if scopedWorktreeID == nil {
-                    Image(systemName: "xmark")
-                        .font(.system(size: UIMetrics.fontMicro, weight: .bold))
-                }
-            }
-            .foregroundStyle(MuxyTheme.fg)
-            .padding(.horizontal, UIMetrics.spacing3)
-            .padding(.vertical, UIMetrics.spacing2)
-            .background(MuxyTheme.surface, in: Capsule())
-            .overlay(Capsule().stroke(MuxyTheme.border, lineWidth: 1))
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .help("Clear project scope")
-    }
-
-    private func scopedWorktreeChip(_ worktree: TerminalOmniboxWorktreeItem) -> some View {
-        Button {
-            activateWorktreeSelection()
-        } label: {
-            HStack(spacing: UIMetrics.scaled(5)) {
-                Image(systemName: worktree.isPrimary ? "folder.badge.gearshape" : "arrow.triangle.branch")
-                    .font(.system(size: UIMetrics.fontXS, weight: .semibold))
-                Text(worktree.name)
-                    .font(.system(size: UIMetrics.fontFootnote, weight: .medium))
-                    .lineLimit(1)
-                Image(systemName: "xmark")
-                    .font(.system(size: UIMetrics.fontMicro, weight: .bold))
-            }
-            .foregroundStyle(MuxyTheme.fg)
-            .padding(.horizontal, UIMetrics.spacing3)
-            .padding(.vertical, UIMetrics.spacing2)
-            .background(MuxyTheme.surface, in: Capsule())
-            .overlay(Capsule().stroke(MuxyTheme.border, lineWidth: 1))
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .help("Clear worktree scope")
     }
 
     private var resultsList: some View {
@@ -347,14 +159,9 @@ struct TerminalOmniboxOverlay: View {
     private var footer: some View {
         HStack(spacing: UIMetrics.scaled(18)) {
             TerminalOmniboxHint(symbol: "return", label: returnHintLabel)
-            HStack(spacing: UIMetrics.scaled(2)) {
+            HStack(spacing: UIMetrics.scaled(4)) {
                 TerminalOmniboxHint(text: tabHintText)
                 TerminalOmniboxHint(symbol: "arrow.up.arrow.down", label: navigateHintLabel)
-            }
-            HStack(spacing: UIMetrics.scaled(2)) {
-                TerminalOmniboxHint(symbol: "option")
-                TerminalOmniboxHint(symbol: "command")
-                TerminalOmniboxHint(text: "p,w,c,h,t", label: "Change scope")
             }
             TerminalOmniboxHint(text: "Esc", label: "Close")
         }
@@ -364,19 +171,28 @@ struct TerminalOmniboxOverlay: View {
     }
 
     private var emptyStateText: String {
-        if scopedProjectID == nil {
-            return "No projects found"
+        switch launchScope {
+        case .projects:
+            "No projects found"
+        case .worktrees:
+            "No worktrees found"
+        case .openTabs:
+            "No open tabs found"
+        case .commandShortcuts:
+            "No custom commands found"
+        case .history:
+            "No history found"
         }
-        if scopedWorktreeID == nil {
-            return "No worktrees found"
-        }
-        return "No tabs, history, or commands"
     }
 
     private var returnHintLabel: String {
-        if scopedProjectID == nil { return "Scope Project" }
-        if scopedWorktreeID == nil { return "Scope Worktree" }
-        return "Open"
+        switch launchScope {
+        case .projects,
+             .worktrees:
+            "Switch"
+        default:
+            "Open"
+        }
     }
 
     private var tabHintText: String {
@@ -395,6 +211,11 @@ struct TerminalOmniboxOverlay: View {
         moveHighlight(-1)
     }
 
+    private func applyLaunchScope() {
+        query = ""
+        highlightedIndex = displayList.isEmpty ? nil : 0
+    }
+
     private func shouldShowSectionHeader(at index: Int) -> Bool {
         guard index < displayList.count else { return false }
         if index == 0 { return true }
@@ -411,119 +232,29 @@ struct TerminalOmniboxOverlay: View {
     }
 
     private func confirmSelection() {
-        guard let index = highlightedIndex, index < displayList.count else {
-            guard scopedCanCreateCommand, !trimmedQuery.isEmpty else { return }
-            onSelect(.typedCommand(trimmedQuery), scopedProjectID, scopedWorktreeID)
-            return
-        }
+        guard let index = highlightedIndex, index < displayList.count else { return }
         let item = displayList[index]
         switch item {
-        case .project:
-            scopeHighlightedItem()
-        case .worktree:
-            scopeHighlightedItem()
+        case .project,
+             .worktree:
+            onSelect(item, nil, nil)
+        case .commandShortcut:
+            onSelect(item, activeProjectID, activeWorktreeID)
         default:
-            onSelect(item, scopedProjectID, scopedWorktreeID)
+            onSelect(item, nil, nil)
         }
     }
 
     private func handleTap(_ item: TerminalOmniboxItem) {
         switch item {
-        case let .project(project):
-            scopedProjectID = project.projectID
-            query = ""
-        case let .worktree(wt):
-            scopedWorktreeID = wt.worktreeID
-            query = ""
+        case .project,
+             .worktree:
+            onSelect(item, nil, nil)
+        case .commandShortcut:
+            onSelect(item, activeProjectID, activeWorktreeID)
         default:
-            onSelect(item, scopedProjectID, scopedWorktreeID)
+            onSelect(item, nil, nil)
         }
-    }
-
-    private func scopeHighlightedItem() {
-        guard let index = highlightedIndex, index < displayList.count else { return }
-        switch displayList[index] {
-        case let .project(project):
-            scopedProjectID = project.projectID
-            query = ""
-        case let .worktree(wt):
-            scopedWorktreeID = wt.worktreeID
-            query = ""
-        default:
-            break
-        }
-    }
-
-    private func activateProjectSelection() {
-        scopedProjectID = nil
-        scopedWorktreeID = nil
-        quickFilter = nil
-        query = ""
-    }
-
-    private func activateWorktreeSelection() {
-        guard scopedProjectID != nil else { return }
-        scopedWorktreeID = nil
-        quickFilter = nil
-        query = ""
-    }
-
-    private func handleEmptyBackspace() {
-        if quickFilter != nil {
-            quickFilter = nil
-            return
-        }
-        if scopedWorktreeID != nil {
-            activateWorktreeSelection()
-            return
-        }
-        activateProjectSelection()
-    }
-
-    private func handleOptionKey(_ key: String) -> Bool {
-        switch key {
-        case "c":
-            toggleQuickFilter(.commands)
-        case "h":
-            toggleQuickFilter(.history)
-        case "t":
-            toggleQuickFilter(.openTabs)
-        case "p":
-            activateProjectSelection()
-        case "w":
-            activateWorktreeSelection()
-        default:
-            return false
-        }
-        return true
-    }
-
-    private func toggleQuickFilter(_ filter: TerminalOmniboxQuickFilter) {
-        quickFilter = quickFilter == filter ? nil : filter
-    }
-}
-
-private struct TerminalOmniboxFilterButton: View {
-    let symbol: String
-    let isActive: Bool
-    let help: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: UIMetrics.fontFootnote, weight: .semibold))
-                .foregroundStyle(isActive ? MuxyTheme.accent : MuxyTheme.fgMuted)
-                .frame(width: UIMetrics.controlMedium, height: UIMetrics.controlMedium)
-                .background(isActive ? MuxyTheme.accent.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: 6))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(isActive ? MuxyTheme.accent.opacity(0.35) : MuxyTheme.border, lineWidth: 1)
-                )
-                .contentShape(RoundedRectangle(cornerRadius: 6))
-        }
-        .buttonStyle(.plain)
-        .help(help)
     }
 }
 

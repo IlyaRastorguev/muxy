@@ -56,6 +56,10 @@ enum ShortcutAction: String, Codable, CaseIterable, Identifiable {
     case quickOpen
     case findInFiles
     case terminalOmnibox
+    case terminalOmniboxProjects
+    case terminalOmniboxWorktrees
+    case terminalOmniboxCommands
+    case terminalOmniboxHistory
     case saveFile
     case toggleSidebar
     case toggleFileTree
@@ -113,6 +117,10 @@ enum ShortcutAction: String, Codable, CaseIterable, Identifiable {
         .quickOpen,
         .findInFiles,
         .terminalOmnibox,
+        .terminalOmniboxProjects,
+        .terminalOmniboxWorktrees,
+        .terminalOmniboxCommands,
+        .terminalOmniboxHistory,
         .saveFile,
         .toggleSidebar,
         .toggleFileTree,
@@ -186,7 +194,27 @@ enum ShortcutAction: String, Codable, CaseIterable, Identifiable {
         case .openVCSTab: ShortcutMetadata(displayName: "Source Control", category: "App", scope: .mainWindow)
         case .quickOpen: ShortcutMetadata(displayName: "Quick Open", category: "App", scope: .mainWindow)
         case .findInFiles: ShortcutMetadata(displayName: "Find in Files", category: "App", scope: .mainWindow)
-        case .terminalOmnibox: ShortcutMetadata(displayName: "Terminal Omnibox", category: "Terminal", scope: .mainWindow)
+        case .terminalOmnibox: ShortcutMetadata(displayName: "Terminal Omnibox Open Tabs", category: "Terminal", scope: .mainWindow)
+        case .terminalOmniboxProjects: ShortcutMetadata(
+                displayName: "Terminal Omnibox Projects",
+                category: "Terminal",
+                scope: .mainWindow
+            )
+        case .terminalOmniboxWorktrees: ShortcutMetadata(
+                displayName: "Terminal Omnibox Worktrees",
+                category: "Terminal",
+                scope: .mainWindow
+            )
+        case .terminalOmniboxCommands: ShortcutMetadata(
+                displayName: "Terminal Omnibox Custom Commands",
+                category: "Terminal",
+                scope: .mainWindow
+            )
+        case .terminalOmniboxHistory: ShortcutMetadata(
+                displayName: "Terminal Omnibox History",
+                category: "Terminal",
+                scope: .mainWindow
+            )
         case .saveFile: ShortcutMetadata(displayName: "Save File", category: "Editor", scope: .mainWindow)
         case .toggleSidebar: ShortcutMetadata(displayName: "Toggle Sidebar", category: "App", scope: .mainWindow)
         case .toggleFileTree: ShortcutMetadata(displayName: "Toggle File Tree", category: "App", scope: .mainWindow)
@@ -316,7 +344,11 @@ struct KeyBinding: Codable, Identifiable {
         Self(action: .submitRichInputWithoutReturn, combo: KeyCombo(key: KeyCombo.returnKey, command: true, shift: true)),
         Self(action: .quickOpen, combo: KeyCombo(key: "p", command: true)),
         Self(action: .findInFiles, combo: KeyCombo(key: "f", command: true, shift: true)),
-        Self(action: .terminalOmnibox, combo: KeyCombo(key: "o", command: true, shift: true)),
+        Self(action: .terminalOmnibox, combo: KeyCombo(key: "o", command: true, option: true)),
+        Self(action: .terminalOmniboxProjects, combo: KeyCombo(key: "p", command: true, option: true)),
+        Self(action: .terminalOmniboxWorktrees, combo: KeyCombo(key: "w", command: true, option: true)),
+        Self(action: .terminalOmniboxCommands, combo: KeyCombo(key: "c", command: true, option: true)),
+        Self(action: .terminalOmniboxHistory, combo: KeyCombo(key: "h", command: true, option: true)),
         Self(action: .saveFile, combo: KeyCombo(key: "s", command: true)),
         Self(action: .toggleSidebar, combo: KeyCombo(key: "b", command: true)),
         Self(action: .toggleFileTree, combo: KeyCombo(key: "e", command: true)),

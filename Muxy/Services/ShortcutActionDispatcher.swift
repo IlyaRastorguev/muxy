@@ -155,7 +155,19 @@ struct ShortcutActionDispatcher {
             notificationCenter.post(name: .findInFiles, object: nil)
             return true
         case .terminalOmnibox:
-            notificationCenter.post(name: .terminalOmnibox, object: nil)
+            postTerminalOmnibox(scope: .openTabs)
+            return true
+        case .terminalOmniboxProjects:
+            postTerminalOmnibox(scope: .projects)
+            return true
+        case .terminalOmniboxWorktrees:
+            postTerminalOmnibox(scope: .worktrees)
+            return true
+        case .terminalOmniboxCommands:
+            postTerminalOmnibox(scope: .commandShortcuts)
+            return true
+        case .terminalOmniboxHistory:
+            postTerminalOmnibox(scope: .history)
             return true
         case .saveFile:
             notificationCenter.post(name: .saveActiveEditor, object: nil)
@@ -209,5 +221,13 @@ struct ShortcutActionDispatcher {
 
     private func resolveActiveWorktree(for projectID: UUID) -> Worktree? {
         worktreeStore.preferred(for: projectID, matching: appState.activeWorktreeID[projectID])
+    }
+
+    private func postTerminalOmnibox(scope: TerminalOmniboxLaunchScope) {
+        notificationCenter.post(
+            name: .terminalOmnibox,
+            object: nil,
+            userInfo: ["launchScope": scope.rawValue]
+        )
     }
 }
