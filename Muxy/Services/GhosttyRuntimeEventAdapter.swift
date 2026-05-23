@@ -68,6 +68,18 @@ final class GhosttyRuntimeEventAdapter: GhosttyRuntimeEventHandling {
         guard let view = surfaceView(from: target) else { return }
         guard let titlePtr = title.title else { return }
         let titleString = String(cString: titlePtr)
+        let sentinel = TerminalLaunchCommand.restoreCompleteSentinel
+        if titleString.hasPrefix(sentinel) {
+            let realTitle = String(titleString.dropFirst(sentinel.count))
+            DispatchQueue.main.async {
+                view.onCommandDroppedToShell?()
+                if let paneID = TerminalViewRegistry.shared.paneID(for: view) {
+                    TerminalCommandTracker.shared.recordShellCommandCandidate(realTitle, paneID: paneID)
+                }
+                view.onTitleChange?(realTitle)
+            }
+            return
+        }
         DispatchQueue.main.async {
             if let paneID = TerminalViewRegistry.shared.paneID(for: view) {
                 TerminalCommandTracker.shared.recordShellCommandCandidate(titleString, paneID: paneID)
@@ -169,7 +181,10 @@ final class GhosttyRuntimeEventAdapter: GhosttyRuntimeEventHandling {
     private func handleCommandExit(target: ghostty_target_s) {
         guard let view = surfaceView(from: target) else { return }
         DispatchQueue.main.async {
-            guard view.closesOnCommandExit else { return }
+            guard view.closesOnCommandExit else {
+                view.onCommandDroppedToShell?()
+                return
+            }
             guard !view.processExitHandled else { return }
             view.processExitHandled = true
             view.onProcessExit?()

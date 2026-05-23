@@ -12,6 +12,8 @@ final class TerminalPaneState: Identifiable {
     let externalEditorFilePath: String?
     let restoredSession: TerminalSessionSnapshot?
     var activeRestoredCommand: String?
+    var restoredCommandFinished = false
+    var isRestorationDeferred: Bool
     var restoreDecision: TerminalSessionRestoreDecision = .none
     var restoreConsumed = false
     let searchState = TerminalSearchState()
@@ -26,7 +28,8 @@ final class TerminalPaneState: Identifiable {
         startupCommand: String? = nil,
         startupCommandInteractive: Bool = false,
         externalEditorFilePath: String? = nil,
-        restoredSession: TerminalSessionSnapshot? = nil
+        restoredSession: TerminalSessionSnapshot? = nil,
+        isRestorationDeferred: Bool = false
     ) {
         self.id = id
         self.projectPath = projectPath
@@ -36,6 +39,7 @@ final class TerminalPaneState: Identifiable {
         self.startupCommandInteractive = startupCommandInteractive
         self.externalEditorFilePath = externalEditorFilePath
         self.restoredSession = restoredSession
+        self.isRestorationDeferred = isRestorationDeferred
         branchObserver.update(repoPath: initialWorkingDirectory ?? projectPath)
         if let restoredSession {
             let decision = TerminalSessionRestorePolicy.decision(for: restoredSession)
@@ -46,16 +50,26 @@ final class TerminalPaneState: Identifiable {
         }
     }
 
-    func consumeRestoredLaunch() -> (command: String?, interactive: Bool) {
+    func activateDeferredRestoration() {
+        isRestorationDeferred = false
+    }
+
+    struct RestoredLaunch {
+        let command: String?
+        let interactive: Bool
+        let dropsToShell: Bool
+    }
+
+    func consumeRestoredLaunch() -> RestoredLaunch {
         guard !restoreConsumed else {
-            return (startupCommand, startupCommandInteractive)
+            return RestoredLaunch(command: startupCommand, interactive: startupCommandInteractive, dropsToShell: false)
         }
         restoreConsumed = true
         switch restoreDecision {
         case .none:
-            return (startupCommand, startupCommandInteractive)
+            return RestoredLaunch(command: startupCommand, interactive: startupCommandInteractive, dropsToShell: false)
         case let .command(command):
-            return (command, true)
+            return RestoredLaunch(command: command, interactive: true, dropsToShell: true)
         }
     }
 

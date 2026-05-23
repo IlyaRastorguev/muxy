@@ -246,6 +246,73 @@ struct WorkspaceSnapshotTests {
         #expect(results[0].focusedAreaID == areaID)
     }
 
+    @Test("WorkspaceRestorer.restoreAll defers terminal sessions outside focused area")
+    func restoreAllDefersSessionsOutsideFocusedArea() {
+        let project = Project(name: "Test", path: testPath)
+        let worktree = Worktree(name: "main", path: testPath, isPrimary: true)
+        let focusedAreaID = UUID()
+        let otherAreaID = UUID()
+        let focusedPaneID = UUID()
+        let otherPaneID = UUID()
+        let snapshot = WorkspaceSnapshot(
+            projectID: project.id,
+            worktreeID: worktree.id,
+            worktreePath: testPath,
+            focusedAreaID: focusedAreaID,
+            root: .split(SplitBranchSnapshot(
+                direction: .horizontal,
+                ratio: 0.5,
+                first: .tabArea(TabAreaSnapshot(
+                    id: focusedAreaID,
+                    projectPath: testPath,
+                    tabs: [
+                        TerminalTabSnapshot(
+                            kind: .terminal,
+                            customTitle: nil,
+                            colorID: nil,
+                            isPinned: false,
+                            projectPath: testPath,
+                            paneTitle: "Focused",
+                            paneID: focusedPaneID
+                        ),
+                    ],
+                    activeTabIndex: 0
+                )),
+                second: .tabArea(TabAreaSnapshot(
+                    id: otherAreaID,
+                    projectPath: testPath,
+                    tabs: [
+                        TerminalTabSnapshot(
+                            kind: .terminal,
+                            customTitle: nil,
+                            colorID: nil,
+                            isPinned: false,
+                            projectPath: testPath,
+                            paneTitle: "Other",
+                            paneID: otherPaneID
+                        ),
+                    ],
+                    activeTabIndex: 0
+                ))
+            ))
+        )
+
+        let results = WorkspaceRestorer.restoreAll(
+            from: [snapshot],
+            projects: [project],
+            worktrees: [project.id: [worktree]],
+            sessionsByPaneID: [
+                focusedPaneID: terminalSession(paneID: focusedPaneID, title: "Focused"),
+                otherPaneID: terminalSession(paneID: otherPaneID, title: "Other"),
+            ]
+        )
+
+        let root = results[0].root
+        #expect(root.findArea(id: focusedAreaID)?.activeTab?.isRestorationDeferred == false)
+        #expect(root.findArea(id: otherAreaID)?.activeTab?.isRestorationDeferred == true)
+        #expect(root.findArea(id: otherAreaID)?.activeTab?.title == "Other")
+    }
+
     @Test("WorkspaceRestorer.restoreAll skips missing projects")
     func restoreAllSkipsMissingProjects() {
         let snapshot = WorkspaceSnapshot(
@@ -343,5 +410,23 @@ struct WorkspaceSnapshotTests {
         #expect(restored.projectPath == area.projectPath)
         #expect(restored.tabs.count == area.tabs.count)
         #expect(restored.tabs[0].isPinned == true)
+    }
+
+    private func terminalSession(paneID: UUID, title: String) -> TerminalSessionSnapshot {
+        TerminalSessionSnapshot(
+            id: UUID(),
+            projectID: UUID(),
+            worktreeID: UUID(),
+            paneID: paneID,
+            tabID: UUID(),
+            areaID: UUID(),
+            projectPath: testPath,
+            title: title,
+            workingDirectory: testPath,
+            startupCommand: nil,
+            lastSubmittedCommand: "nvim Package.swift",
+            activity: .running,
+            capturedAt: Date()
+        )
     }
 }

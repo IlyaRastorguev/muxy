@@ -9,12 +9,14 @@ final class GhosttyTerminalNSView: NSView {
     private let workingDirectory: String
     private let command: String?
     private let commandInteractive: Bool
+    private let commandDropsToShell: Bool
     var envVars: [(key: String, value: String)] = []
     var onTitleChange: ((String) -> Void)?
     var onWorkingDirectoryChange: ((String) -> Void)?
     var onFocus: (() -> Void)?
     var onExternalDragHoverChange: ((Bool) -> Void)?
     var onProcessExit: (() -> Void)?
+    var onCommandDroppedToShell: (() -> Void)?
     var onSplitRequest: ((SplitDirection, SplitPosition) -> Void)?
     var onSearchStart: ((String?) -> Void)?
     var onSearchEnd: (() -> Void)?
@@ -38,7 +40,7 @@ final class GhosttyTerminalNSView: NSView {
     nonisolated(unsafe) private var occlusionObserver: NSObjectProtocol?
 
     var closesOnCommandExit: Bool {
-        command != nil
+        command != nil && !commandDropsToShell
     }
 
     private var _markedText: String = ""
@@ -56,11 +58,13 @@ final class GhosttyTerminalNSView: NSView {
     init(
         workingDirectory: String,
         command: String? = nil,
-        commandInteractive: Bool = false
+        commandInteractive: Bool = false,
+        commandDropsToShell: Bool = false
     ) {
         self.workingDirectory = workingDirectory
         self.command = command
         self.commandInteractive = commandInteractive
+        self.commandDropsToShell = commandDropsToShell
         super.init(frame: .zero)
         wantsLayer = true
         setupTrackingArea()
@@ -125,7 +129,10 @@ final class GhosttyTerminalNSView: NSView {
         config.working_directory = UnsafePointer(workingDirectoryPointer)
 
         if let command,
-           let loginWrapped = strdup(TerminalLaunchCommand.shellCommand(interactive: commandInteractive)),
+           let loginWrapped = strdup(TerminalLaunchCommand.shellCommand(
+               interactive: commandInteractive,
+               dropsToShell: commandDropsToShell
+           )),
            let commandKey = strdup(TerminalLaunchCommand.environmentKey),
            let commandValue = strdup(command)
         {
@@ -201,6 +208,7 @@ final class GhosttyTerminalNSView: NSView {
         onFocus = nil
         onExternalDragHoverChange = nil
         onProcessExit = nil
+        onCommandDroppedToShell = nil
         onSplitRequest = nil
         onSearchStart = nil
         onSearchEnd = nil

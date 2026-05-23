@@ -38,17 +38,27 @@ final class TabArea: Identifiable {
         activeTabID = tab.id
     }
 
-    init(restoring snapshot: TabAreaSnapshot, sessionsByPaneID: [UUID: TerminalSessionSnapshot] = [:]) {
+    init(
+        restoring snapshot: TabAreaSnapshot,
+        sessionsByPaneID: [UUID: TerminalSessionSnapshot] = [:],
+        restoreActiveTab: Bool = true
+    ) {
         id = snapshot.id
         projectPath = snapshot.projectPath
-        tabs = snapshot.tabs.map { tabSnapshot in
+        let activeIndex = if let index = snapshot.activeTabIndex, index >= 0, index < snapshot.tabs.count {
+            index
+        } else {
+            0
+        }
+        tabs = snapshot.tabs.enumerated().map { index, tabSnapshot in
             TerminalTab(
                 restoring: tabSnapshot,
-                restoredSession: tabSnapshot.paneID.flatMap { sessionsByPaneID[$0] }
+                restoredSession: tabSnapshot.paneID.flatMap { sessionsByPaneID[$0] },
+                isRestorationDeferred: !restoreActiveTab || index != activeIndex
             )
         }
-        if let index = snapshot.activeTabIndex, index >= 0, index < tabs.count {
-            activeTabID = tabs[index].id
+        if activeIndex >= 0, activeIndex < tabs.count {
+            activeTabID = tabs[activeIndex].id
         } else {
             activeTabID = tabs.first?.id
         }
@@ -221,9 +231,11 @@ final class TabArea: Identifiable {
 
     func selectTab(_ tabID: UUID) {
         guard activeTabID != tabID else { return }
+        guard let tab = tabs.first(where: { $0.id == tabID }) else { return }
         if let current = activeTabID, current != tabID {
             tabHistory.append(current)
         }
+        tab.activateDeferredRestoration()
         activeTabID = tabID
     }
 

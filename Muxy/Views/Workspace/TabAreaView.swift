@@ -203,15 +203,24 @@ private struct TabContentView: View {
     var body: some View {
         switch tab.content {
         case let .terminal(pane):
-            TerminalPane(
-                state: pane,
-                focused: focused,
-                visible: visible,
-                areaID: areaID,
-                onFocus: onFocus,
-                onProcessExit: onProcessExit,
-                onSplitRequest: onSplitRequest
-            )
+            if pane.isRestorationDeferred {
+                Color.clear
+                    .onAppear {
+                        if visible {
+                            pane.activateDeferredRestoration()
+                        }
+                    }
+            } else {
+                TerminalPane(
+                    state: pane,
+                    focused: focused,
+                    visible: visible,
+                    areaID: areaID,
+                    onFocus: onFocus,
+                    onProcessExit: onProcessExit,
+                    onSplitRequest: onSplitRequest
+                )
+            }
         case let .vcs(vcsState):
             VCSTabView(state: vcsState, focused: focused, onFocus: onFocus)
         case let .editor(editorState):
