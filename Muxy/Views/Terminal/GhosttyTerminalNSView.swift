@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 final class GhosttyTerminalNSView: NSView {
     nonisolated(unsafe) private(set) var surface: ghostty_surface_t?
+    private var surfaceFocused: Bool?
     private let workingDirectory: String
     private let command: String?
     private let commandInteractive: Bool
@@ -43,12 +44,15 @@ final class GhosttyTerminalNSView: NSView {
 
     private var _markedText: String = ""
     private var _markedRange: NSRange = .init(location: NSNotFound, length: 0)
-    private var _selectedRange: NSRange = .init(location: NSNotFound, length: 0)
+    private var _selectedRange: NSRange = .init(location: 0, length: 0)
 
     private var keyTextAccumulator: [String] = []
     private var currentKeyEvent: NSEvent?
     private var commandSelectorCalled = false
     private var inputTrackingDecisionCache: (expiresAt: Date, canRecord: Bool)?
+    nonisolated(unsafe) private var surfaceCStringPointers: [UnsafeMutablePointer<CChar>] = []
+    nonisolated(unsafe) private var surfaceEnvVarPointer: UnsafeMutablePointer<ghostty_env_var_s>?
+    nonisolated(unsafe) private var surfaceEnvVarCount = 0
 
     init(
         workingDirectory: String,
@@ -116,10 +120,13 @@ final class GhosttyTerminalNSView: NSView {
         config.scale_factor = Double(window?.backingScaleFactor ?? 2.0)
         config.context = GHOSTTY_SURFACE_CONTEXT_SPLIT
 
-        var cStrings: [UnsafeMutablePointer<CChar>] = []
-        defer { cStrings.forEach { free($0) } }
+        cleanupSurfaceConfigPointers()
 
         var cEnvVars: [ghostty_env_var_s] = []
+        guard let workingDirectoryPointer = strdup(workingDirectory) else { return }
+        surfaceCStringPointers.append(workingDirectoryPointer)
+        config.working_directory = UnsafePointer(workingDirectoryPointer)
+
         if let command,
            let loginWrapped = strdup(TerminalLaunchCommand.shellCommand(
                interactive: commandInteractive,
@@ -128,8 +135,7 @@ final class GhosttyTerminalNSView: NSView {
            let commandKey = strdup(TerminalLaunchCommand.environmentKey),
            let commandValue = strdup(command)
         {
-            cStrings.append(loginWrapped)
-            cStrings.append(contentsOf: [commandKey, commandValue])
+            surfaceCStringPointers.append(contentsOf: [loginWrapped, commandKey, commandValue])
             cEnvVars.append(ghostty_env_var_s(key: commandKey, value: commandValue))
             config.command = UnsafePointer(loginWrapped)
             config.wait_after_command = false
@@ -137,21 +143,23 @@ final class GhosttyTerminalNSView: NSView {
 
         for pair in envVars {
             guard let ck = strdup(pair.key), let cv = strdup(pair.value) else { continue }
-            cStrings.append(contentsOf: [ck, cv])
+            surfaceCStringPointers.append(contentsOf: [ck, cv])
             cEnvVars.append(ghostty_env_var_s(key: ck, value: cv))
         }
 
-        workingDirectory.withCString { cwd in
-            config.working_directory = cwd
-            if !cEnvVars.isEmpty {
-                cEnvVars.withUnsafeMutableBufferPointer { buffer in
-                    config.env_vars = buffer.baseAddress
-                    config.env_var_count = buffer.count
-                    surface = ghostty_surface_new(app, &config)
-                }
-            } else {
-                surface = ghostty_surface_new(app, &config)
-            }
+        if !cEnvVars.isEmpty {
+            let envVarPointer = UnsafeMutablePointer<ghostty_env_var_s>.allocate(capacity: cEnvVars.count)
+            envVarPointer.initialize(from: cEnvVars, count: cEnvVars.count)
+            surfaceEnvVarPointer = envVarPointer
+            surfaceEnvVarCount = cEnvVars.count
+            config.env_vars = envVarPointer
+            config.env_var_count = cEnvVars.count
+        }
+
+        surface = ghostty_surface_new(app, &config)
+
+        if surface == nil {
+            cleanupSurfaceConfigPointers()
         }
 
         guard let surface else { return }
@@ -169,7 +177,7 @@ final class GhosttyTerminalNSView: NSView {
             ghostty_surface_set_display_id(surface, displayID)
         }
 
-        ghostty_surface_set_focus(surface, isFocused)
+        syncSurfaceFocus()
 
         if let paneID = TerminalViewRegistry.shared.paneID(for: self) {
             RemoteTerminalStreamer.shared.attach(paneID: paneID, surface: surface)
@@ -186,6 +194,8 @@ final class GhosttyTerminalNSView: NSView {
             ghostty_surface_free(surface)
         }
         surface = nil
+        surfaceFocused = nil
+        cleanupSurfaceConfigPointers()
     }
 
     func tearDown() {
@@ -224,6 +234,16 @@ final class GhosttyTerminalNSView: NSView {
         if let surface {
             ghostty_surface_free(surface)
         }
+        cleanupSurfaceConfigPointers()
+    }
+
+    nonisolated(unsafe) private func cleanupSurfaceConfigPointers() {
+        surfaceEnvVarPointer?.deinitialize(count: surfaceEnvVarCount)
+        surfaceEnvVarPointer?.deallocate()
+        surfaceEnvVarPointer = nil
+        surfaceEnvVarCount = 0
+        surfaceCStringPointers.forEach { free($0) }
+        surfaceCStringPointers.removeAll()
     }
 
     nonisolated(unsafe) private var screenChangeObserver: NSObjectProtocol?
@@ -383,13 +403,32 @@ final class GhosttyTerminalNSView: NSView {
     }
 
     func notifySurfaceFocused() {
-        guard let surface else { return }
-        ghostty_surface_set_focus(surface, true)
+        setSurfaceFocused(true)
     }
 
     func notifySurfaceUnfocused() {
-        guard let surface else { return }
-        ghostty_surface_set_focus(surface, false)
+        setSurfaceFocused(false)
+    }
+
+    private func syncSurfaceFocus() {
+        setSurfaceFocused(!overlayActive && (window?.firstResponder === self || window?.firstResponder === inputContext))
+    }
+
+    private func setSurfaceFocused(_ focused: Bool) {
+        guard let surface else {
+            surfaceFocused = nil
+            return
+        }
+        guard Self.shouldApplySurfaceFocusChange(previous: surfaceFocused, next: focused) else {
+            surfaceFocused = focused
+            return
+        }
+        ghostty_surface_set_focus(surface, focused)
+        surfaceFocused = focused
+    }
+
+    static func shouldApplySurfaceFocusChange(previous: Bool?, next: Bool) -> Bool {
+        previous != next && (next || previous != nil)
     }
 
     override var acceptsFirstResponder: Bool { !overlayActive }
@@ -397,9 +436,7 @@ final class GhosttyTerminalNSView: NSView {
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
         if result {
-            if let surface {
-                ghostty_surface_set_focus(surface, true)
-            }
+            setSurfaceFocused(true)
             if !isFocused {
                 DispatchQueue.main.async { [weak self] in
                     self?.onFocus?()
@@ -411,8 +448,8 @@ final class GhosttyTerminalNSView: NSView {
 
     override func resignFirstResponder() -> Bool {
         let result = super.resignFirstResponder()
-        if result, let surface {
-            ghostty_surface_set_focus(surface, false)
+        if result {
+            setSurfaceFocused(false)
         }
         return result
     }
@@ -581,7 +618,7 @@ final class GhosttyTerminalNSView: NSView {
         let alreadyFirstResponder = window?.firstResponder === self
         window?.makeFirstResponder(self)
         if alreadyFirstResponder {
-            ghostty_surface_set_focus(surface, true)
+            setSurfaceFocused(true)
             DispatchQueue.main.async { [weak self] in
                 self?.onFocus?()
             }
@@ -1046,6 +1083,42 @@ final class GhosttyTerminalNSView: NSView {
         }
     }
 
+    func readScreenText(lastLines: Int = 50) -> String {
+        guard let surface else { return "" }
+        var out = ghostty_cells_s()
+        guard ghostty_surface_read_cells(surface, &out) else { return "" }
+        defer { ghostty_surface_free_cells(surface, &out) }
+
+        let cols = Int(out.cols)
+        let rows = Int(out.rows)
+        guard cols > 0, rows > 0, let cells = out.cells else { return "" }
+
+        var lines: [String] = []
+        for row in 0 ..< rows {
+            var line = ""
+            for col in 0 ..< cols {
+                let cell = cells[row * cols + col]
+                let cp = cell.codepoint
+                if cp == 0 {
+                    line.append(" ")
+                } else if let scalar = Unicode.Scalar(cp) {
+                    line.append(Character(scalar))
+                } else {
+                    line.append(" ")
+                }
+            }
+            lines.append(line)
+        }
+
+        while lines.last?.allSatisfy({ $0 == " " }) == true {
+            lines.removeLast()
+        }
+
+        let trimmed = lines.map { $0.replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression) }
+        let result = trimmed.suffix(lastLines)
+        return result.joined(separator: "\n")
+    }
+
     func submitRichInput(text: String) {
         guard !text.isEmpty else { return }
         let sanitized = text.replacingOccurrences(of: "\u{1B}[201~", with: "")
@@ -1237,7 +1310,6 @@ extension GhosttyTerminalNSView {
                 NSApp.activate()
                 self.window?.makeKeyAndOrderFront(nil)
                 self.window?.makeFirstResponder(self)
-                self.notifySurfaceFocused()
                 self.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
             }
         }
@@ -1278,8 +1350,8 @@ extension GhosttyTerminalNSView: @preconcurrency NSTextInputClient {
     func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
         let text = (string as? String) ?? (string as? NSAttributedString)?.string ?? ""
         _markedText = text
-        _markedRange = text.isEmpty ? NSRange(location: NSNotFound, length: 0) : NSRange(location: 0, length: text.count)
-        _selectedRange = selectedRange
+        _markedRange = text.isEmpty ? NSRange(location: NSNotFound, length: 0) : NSRange(location: 0, length: text.utf16.count)
+        _selectedRange = clampedMarkedRange(selectedRange)
 
         if currentKeyEvent == nil {
             syncPreedit()
@@ -1290,6 +1362,7 @@ extension GhosttyTerminalNSView: @preconcurrency NSTextInputClient {
         guard hasMarkedText() else { return }
         _markedText = ""
         _markedRange = NSRange(location: NSNotFound, length: 0)
+        _selectedRange = NSRange(location: 0, length: 0)
         syncPreedit()
     }
 
@@ -1306,11 +1379,17 @@ extension GhosttyTerminalNSView: @preconcurrency NSTextInputClient {
     }
 
     func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? {
-        nil
+        guard hasMarkedText() else {
+            actualRange?.pointee = NSRange(location: 0, length: 0)
+            return range.location == 0 && range.length == 0 ? NSAttributedString(string: "") : nil
+        }
+        guard let safeRange = intersection(range, with: _markedRange) else { return nil }
+        actualRange?.pointee = safeRange
+        return NSAttributedString(string: (_markedText as NSString).substring(with: safeRange))
     }
 
     func validAttributesForMarkedText() -> [NSAttributedString.Key] {
-        [.underlineStyle, .backgroundColor]
+        []
     }
 
     func characterIndex(for point: NSPoint) -> Int {
@@ -1324,5 +1403,20 @@ extension GhosttyTerminalNSView: @preconcurrency NSTextInputClient {
         let viewPt = NSPoint(x: x, y: bounds.height - y)
         let screenPt = window?.convertPoint(toScreen: convert(viewPt, to: nil)) ?? viewPt
         return NSRect(x: screenPt.x, y: screenPt.y - h, width: w, height: h)
+    }
+
+    private func clampedMarkedRange(_ range: NSRange) -> NSRange {
+        guard range.location != NSNotFound else { return NSRange(location: 0, length: 0) }
+        let length = _markedText.utf16.count
+        let location = min(range.location, length)
+        return NSRange(location: location, length: min(range.length, length - location))
+    }
+
+    private func intersection(_ range: NSRange, with otherRange: NSRange) -> NSRange? {
+        guard range.location != NSNotFound, otherRange.location != NSNotFound else { return nil }
+        let start = max(range.location, otherRange.location)
+        let end = min(range.location + range.length, otherRange.location + otherRange.length)
+        guard start <= end else { return nil }
+        return NSRange(location: start, length: end - start)
     }
 }

@@ -7,7 +7,6 @@ struct ProjectPickerOverlay: View {
     let onChooseFinder: () -> Void
     let onDismiss: () -> Void
 
-    @Environment(\.openSettings) private var openSettings
     @State private var workflow: ProjectPickerWorkflow
 
     init(
@@ -262,8 +261,8 @@ struct ProjectPickerOverlay: View {
             DispatchQueue.main.async { onChooseFinder() }
         case .openSettingsFocusedOnDefaultLocation:
             DispatchQueue.main.async {
-                openSettings()
                 SettingsFocusCoordinator.shared.request(.projectPickerDefaultLocation)
+                NotificationCenter.default.post(name: .openSettingsModal, object: nil)
             }
         case .dismiss:
             onDismiss()

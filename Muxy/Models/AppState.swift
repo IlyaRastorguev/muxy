@@ -12,12 +12,19 @@ final class AppState {
         let areaID: UUID
         let direction: SplitDirection
         let position: SplitPosition
+        var command: String?
     }
 
     struct DiffViewerRequest {
         let vcs: VCSTabState
         let filePath: String
         let isStaged: Bool
+    }
+
+    struct CreatedCommandTab: Equatable {
+        let tabID: UUID
+        let areaID: UUID
+        let paneID: UUID
     }
 
     enum Action {
@@ -65,6 +72,7 @@ final class AppState {
     private let workspacePersistence: any WorkspacePersisting
     private let terminalSessions: any TerminalSessionStoring
     var onProjectsEmptied: (([UUID]) -> Void)?
+    var onPaneClosed: ((UUID) -> Void)?
 
     var activeProjectID: UUID?
 
@@ -293,6 +301,54 @@ final class AppState {
                 closesOnCommandExit: false
             )
         ))
+    }
+
+    func createProjectCommandTab(projectID: UUID, name: String, command: String) -> CreatedCommandTab? {
+        dispatch(.createCommandTab(projectID: projectID, areaID: nil, name: name, command: command))
+        guard let key = activeWorktreeKey(for: projectID),
+              let areaID = focusedAreaID[key],
+              let area = workspaceRoots[key]?.findArea(id: areaID),
+              let tab = area.activeTab,
+              let pane = tab.content.pane
+        else { return nil }
+        return CreatedCommandTab(tabID: tab.id, areaID: area.id, paneID: pane.id)
+    }
+
+    func selectTab(projectID: UUID, areaID: UUID, tabID: UUID) {
+        dispatch(.selectTab(projectID: projectID, areaID: areaID, tabID: tabID))
+    }
+
+    func interruptCommandTab(paneID: UUID) {
+        TerminalViewRegistry.shared.view(for: paneID)?.sendRemoteBytes(TerminalControlBytes.interrupt)
+    }
+
+    func restartCommandTab(_ run: ProjectCommandRun, command: ProjectCommand) -> ProjectCommandRun? {
+        selectTab(projectID: run.projectID, areaID: run.areaID, tabID: run.tabID)
+        guard let view = TerminalViewRegistry.shared.view(for: run.paneID) else {
+            return createProjectCommandTab(projectID: run.projectID, name: command.name, command: command.command).map {
+                ProjectCommandRun(
+                    commandID: command.id,
+                    projectID: run.projectID,
+                    tabID: $0.tabID,
+                    areaID: $0.areaID,
+                    paneID: $0.paneID,
+                    state: .running
+                )
+            }
+        }
+        view.sendRemoteBytes(TerminalControlBytes.interrupt)
+        view.sendText("clear")
+        view.sendReturnKey()
+        view.sendText(command.command)
+        view.sendReturnKey()
+        return ProjectCommandRun(
+            commandID: command.id,
+            projectID: run.projectID,
+            tabID: run.tabID,
+            areaID: run.areaID,
+            paneID: run.paneID,
+            state: .running
+        )
     }
 
     func createVCSTab(projectID: UUID) {
@@ -849,6 +905,7 @@ final class AppState {
         for paneID in effects.paneIDsToRemove {
             terminalViews.removeView(for: paneID)
             TerminalProgressStore.shared.resetPane(paneID)
+            onPaneClosed?(paneID)
         }
 
         if !effects.projectIDsToRemove.isEmpty {
