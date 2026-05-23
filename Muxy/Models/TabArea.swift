@@ -275,10 +275,12 @@ final class TabArea: Identifiable {
         while let prev = tabHistory.popLast() {
             if validIDs.contains(prev) {
                 activeTabID = prev
+                activeTab?.activateDeferredRestoration()
                 return tab
             }
         }
         activeTabID = tabs.last?.id
+        activeTab?.activateDeferredRestoration()
         return tab
     }
 
