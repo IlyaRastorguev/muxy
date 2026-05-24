@@ -152,3 +152,50 @@ enum TerminalOmniboxItem: Identifiable, Equatable {
         }
     }
 }
+
+struct TerminalOmniboxItemContext {
+    let projects: [TerminalOmniboxProjectItem]
+    let worktrees: [TerminalOmniboxWorktreeItem]
+    let openTabs: [OpenTerminalTabItem]
+    let closedTabs: [ClosedTerminalTabSnapshot]
+    let commandShortcuts: [CommandShortcut]
+    let activeProjectID: UUID?
+    let activeWorktreeID: UUID?
+    let commandProjectIDs: Set<UUID>
+}
+
+enum TerminalOmniboxItemResolver {
+    static func items(
+        in context: TerminalOmniboxItemContext,
+        launchScope: TerminalOmniboxLaunchScope
+    ) -> [TerminalOmniboxItem] {
+        switch launchScope {
+        case .projects:
+            return context.projects.map(TerminalOmniboxItem.project)
+        case .worktrees:
+            guard let activeProjectID = context.activeProjectID else { return [] }
+            return context.worktrees
+                .filter { $0.projectID == activeProjectID }
+                .map(TerminalOmniboxItem.worktree)
+        case .openTabs:
+            guard let activeProjectID = context.activeProjectID,
+                  let activeWorktreeID = context.activeWorktreeID
+            else { return [] }
+            return context.openTabs
+                .filter { $0.projectID == activeProjectID && $0.worktreeID == activeWorktreeID }
+                .map(TerminalOmniboxItem.openTab)
+        case .commandShortcuts:
+            guard context.activeProjectID.map(context.commandProjectIDs.contains) == true else { return [] }
+            return context.commandShortcuts
+                .filter { !$0.trimmedCommand.isEmpty }
+                .map(TerminalOmniboxItem.commandShortcut)
+        case .history:
+            guard let activeProjectID = context.activeProjectID,
+                  let activeWorktreeID = context.activeWorktreeID
+            else { return [] }
+            return context.closedTabs
+                .filter { $0.projectID == activeProjectID && $0.worktreeID == activeWorktreeID }
+                .map(TerminalOmniboxItem.closedTab)
+        }
+    }
+}

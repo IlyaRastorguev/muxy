@@ -27,27 +27,19 @@ struct TerminalOmniboxOverlay: View {
     }
 
     private var baseItems: [TerminalOmniboxItem] {
-        switch launchScope {
-        case .projects:
-            return projects.map(TerminalOmniboxItem.project)
-        case .worktrees:
-            return worktrees.map(TerminalOmniboxItem.worktree)
-        case .openTabs:
-            guard let activeProjectID, let activeWorktreeID else { return [] }
-            return openTabs
-                .filter { $0.projectID == activeProjectID && $0.worktreeID == activeWorktreeID }
-                .map(TerminalOmniboxItem.openTab)
-        case .commandShortcuts:
-            guard activeProjectID.map(commandProjectIDs.contains) == true else { return [] }
-            return commandShortcuts
-                .filter { !$0.trimmedCommand.isEmpty }
-                .map(TerminalOmniboxItem.commandShortcut)
-        case .history:
-            guard let activeProjectID, let activeWorktreeID else { return [] }
-            return closedTabs
-                .filter { $0.projectID == activeProjectID && $0.worktreeID == activeWorktreeID }
-                .map(TerminalOmniboxItem.closedTab)
-        }
+        TerminalOmniboxItemResolver.items(
+            in: TerminalOmniboxItemContext(
+                projects: projects,
+                worktrees: worktrees,
+                openTabs: openTabs,
+                closedTabs: closedTabs,
+                commandShortcuts: commandShortcuts,
+                activeProjectID: activeProjectID,
+                activeWorktreeID: activeWorktreeID,
+                commandProjectIDs: commandProjectIDs
+            ),
+            launchScope: launchScope
+        )
     }
 
     var body: some View {
