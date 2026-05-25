@@ -144,7 +144,8 @@ struct TerminalBridge: NSViewRepresentable {
             workingDirectory: state.currentWorkingDirectory ?? state.projectPath,
             command: launch.command,
             commandInteractive: launch.interactive,
-            commandDropsToShell: launch.dropsToShell
+            commandDropsToShell: launch.dropsToShell,
+            closesOnCommandExit: launch.closesOnCommandExit
         )
         if view.envVars.isEmpty, let key = worktreeKey {
             view.envVars = TerminalEnvVarBuilder.build(paneID: state.id, worktreeKey: key)
@@ -156,7 +157,7 @@ struct TerminalBridge: NSViewRepresentable {
         view.onProcessExit = onProcessExit
         view.onCommandDroppedToShell = { [weak state] in
             DispatchQueue.main.async {
-                state?.restoredCommandFinished = true
+                state?.finishRestoredCommand()
             }
         }
         view.onSplitRequest = onSplitRequest
@@ -199,7 +200,7 @@ struct TerminalBridge: NSViewRepresentable {
         nsView.onProcessExit = onProcessExit
         nsView.onCommandDroppedToShell = { [weak state] in
             DispatchQueue.main.async {
-                state?.restoredCommandFinished = true
+                state?.finishRestoredCommand()
             }
         }
         nsView.onSplitRequest = onSplitRequest

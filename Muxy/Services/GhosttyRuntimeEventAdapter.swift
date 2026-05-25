@@ -28,6 +28,9 @@ final class GhosttyRuntimeEventAdapter: GhosttyRuntimeEventHandling {
         case GHOSTTY_ACTION_SET_TITLE:
             handleSetTitle(target: target, title: action.action.set_title)
             return true
+        case GHOSTTY_ACTION_SET_TAB_TITLE:
+            handleSetTitle(target: target, title: action.action.set_tab_title)
+            return true
         case GHOSTTY_ACTION_DESKTOP_NOTIFICATION:
             logger.debug("DESKTOP_NOTIFICATION action received")
             handleDesktopNotification(target: target, notification: action.action.desktop_notification)

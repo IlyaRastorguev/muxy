@@ -67,22 +67,34 @@ final class TerminalPaneState: Identifiable {
         let command: String?
         let interactive: Bool
         let dropsToShell: Bool
+        let closesOnCommandExit: Bool
     }
 
     func consumeRestoredLaunch() -> RestoredLaunch {
         guard !restoreConsumed else {
-            return RestoredLaunch(command: startupCommand, interactive: startupCommandInteractive, dropsToShell: false)
+            return RestoredLaunch(
+                command: startupCommand,
+                interactive: startupCommandInteractive,
+                dropsToShell: false,
+                closesOnCommandExit: closesOnStartupCommandExit
+            )
         }
         restoreConsumed = true
         switch restoreDecision {
         case .none:
-            return RestoredLaunch(command: startupCommand, interactive: startupCommandInteractive, dropsToShell: false)
+            return RestoredLaunch(
+                command: startupCommand,
+                interactive: startupCommandInteractive,
+                dropsToShell: false,
+                closesOnCommandExit: closesOnStartupCommandExit
+            )
         case let .command(command):
-            return RestoredLaunch(command: command, interactive: true, dropsToShell: true)
+            return RestoredLaunch(command: command, interactive: true, dropsToShell: true, closesOnCommandExit: false)
         }
     }
 
     func setTitle(_ newTitle: String) {
+        guard !newTitle.isEmpty else { return }
         titleDebounceTask?.cancel()
         titleDebounceTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(500))
@@ -91,8 +103,23 @@ final class TerminalPaneState: Identifiable {
         }
     }
 
+    func finishRestoredCommand() {
+        guard activeRestoredCommand != nil else { return }
+        restoredCommandFinished = true
+        let path = currentWorkingDirectory ?? projectPath
+        let directoryName = URL(fileURLWithPath: path).lastPathComponent
+        setImmediateTitle(directoryName.isEmpty ? path : directoryName)
+    }
+
     func setWorkingDirectory(_ path: String) {
         currentWorkingDirectory = path
         branchObserver.update(repoPath: path)
+    }
+
+    private func setImmediateTitle(_ newTitle: String) {
+        guard !newTitle.isEmpty else { return }
+        titleDebounceTask?.cancel()
+        guard title != newTitle else { return }
+        title = newTitle
     }
 }
