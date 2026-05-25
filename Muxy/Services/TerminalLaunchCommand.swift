@@ -12,15 +12,16 @@ enum TerminalLaunchCommand {
         return "\(escapedShell) \(flags) -c '\(activeScript)' \(escapedShell)"
     }
 
-    private static var script: String {
-        [
+    private static func script(keepsShellOpen: Bool) -> String {
+        var segments = [
             "eval \"$\(environmentKey)\"",
             "muxy_status=$?",
             "if [ $muxy_status -ne 0 ]",
             "then exec \"$0\" -l",
-            "else exit $muxy_status",
-            "fi",
-        ].joined(separator: "; ")
+        ]
+        segments.append(keepsShellOpen ? "else exec \"$0\" -l" : "else exit $muxy_status")
+        segments.append("fi")
+        return segments.joined(separator: "; ")
     }
 
     private static var persistentScript: String {

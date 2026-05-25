@@ -1,5 +1,11 @@
 import Foundation
 
+struct TerminalPaneLaunch: Equatable {
+    let command: String?
+    let interactive: Bool
+    let closesOnCommandExit: Bool
+}
+
 @MainActor
 @Observable
 final class TerminalPaneState: Identifiable {
@@ -9,6 +15,7 @@ final class TerminalPaneState: Identifiable {
     var currentWorkingDirectory: String?
     let startupCommand: String?
     let startupCommandInteractive: Bool
+    let closesOnStartupCommandExit: Bool
     let externalEditorFilePath: String?
     let restoredSession: TerminalSessionSnapshot?
     var activeRestoredCommand: String?
@@ -27,6 +34,7 @@ final class TerminalPaneState: Identifiable {
         initialWorkingDirectory: String? = nil,
         startupCommand: String? = nil,
         startupCommandInteractive: Bool = false,
+        closesOnStartupCommandExit: Bool = true,
         externalEditorFilePath: String? = nil,
         restoredSession: TerminalSessionSnapshot? = nil,
         isRestorationDeferred: Bool = false
@@ -37,6 +45,7 @@ final class TerminalPaneState: Identifiable {
         self.currentWorkingDirectory = initialWorkingDirectory
         self.startupCommand = startupCommand
         self.startupCommandInteractive = startupCommandInteractive
+        self.closesOnStartupCommandExit = closesOnStartupCommandExit
         self.externalEditorFilePath = externalEditorFilePath
         self.restoredSession = restoredSession
         self.isRestorationDeferred = isRestorationDeferred
