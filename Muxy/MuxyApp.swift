@@ -10,9 +10,8 @@ struct MuxyApp: App {
     @State private var projectStore: ProjectStore
     @State private var worktreeStore: WorktreeStore
     @State private var projectGroupStore: ProjectGroupStore
-    @State private var projectCommandStore: ProjectCommandStore
     @State private var vcsWorktreeAutoRefresher: VCSWorktreeAutoRefresher
-    private let updateService = UpdateService.shared
+    @State private var didStartDeferredServices = false
 
     init() {
         _ = MuxyApp.launchDate
@@ -34,9 +33,6 @@ struct MuxyApp: App {
         let projectGroupStore = ProjectGroupStore(
             persistence: environment.projectGroupPersistence
         )
-        let projectCommandStore = ProjectCommandStore(
-            persistence: environment.projectCommandPersistence
-        )
         let vcsWorktreeAutoRefresher = VCSWorktreeAutoRefresher(
             appState: appState,
             projectStore: projectStore,
@@ -46,9 +42,7 @@ struct MuxyApp: App {
         _projectStore = State(initialValue: projectStore)
         _worktreeStore = State(initialValue: worktreeStore)
         _projectGroupStore = State(initialValue: projectGroupStore)
-        _projectCommandStore = State(initialValue: projectCommandStore)
         _vcsWorktreeAutoRefresher = State(initialValue: vcsWorktreeAutoRefresher)
-        SettingsJSONStore.beginAutomaticUserSettingsSync()
     }
 
     var body: some Scene {
@@ -58,12 +52,12 @@ struct MuxyApp: App {
                 .environment(projectStore)
                 .environment(worktreeStore)
                 .environment(projectGroupStore)
-                .environment(projectCommandStore)
                 .environment(GhosttyService.shared)
                 .environment(MuxyConfig.shared)
                 .environment(ThemeService.shared)
                 .preferredColorScheme(MuxyTheme.colorScheme)
                 .onAppear {
+                    startDeferredServicesIfNeeded()
                     NotificationStore.shared.appState = appState
                     NotificationStore.shared.worktreeStore = worktreeStore
                     NotificationStore.shared.markAllAsRead()
@@ -85,8 +79,13 @@ struct MuxyApp: App {
                         )
                     }
                     appDelegate.flushPendingOpens()
-                    NotificationSocketServer.shared.commandHandler = { [appState] message in
-                        await SocketCommandHandler.handleRequest(message, appState: appState)
+                    NotificationSocketServer.shared.commandHandler = { [appState, projectStore, worktreeStore] message in
+                        await SocketCommandHandler.handleRequest(
+                            message,
+                            appState: appState,
+                            projectStore: projectStore,
+                            worktreeStore: worktreeStore
+                        )
                     }
                     MobileServerService.shared.configure { server in
                         let delegate = RemoteServerDelegate(
@@ -111,9 +110,6 @@ struct MuxyApp: App {
                             projectStore.remove(id: id)
                             worktreeStore.removeProject(id)
                         }
-                    }
-                    appState.onPaneClosed = { [projectCommandStore] paneID in
-                        projectCommandStore.removeRun(paneID: paneID)
                     }
                     projectStore.onProjectRemoved = { [projectGroupStore] projectID in
                         projectGroupStore.removeProjectFromAllGroups(projectID: projectID)
@@ -152,6 +148,18 @@ struct MuxyApp: App {
                 .preferredColorScheme(MuxyTheme.colorScheme)
         }
         .defaultSize(width: 820, height: 580)
+    }
+
+    private func startDeferredServicesIfNeeded() {
+        guard !didStartDeferredServices else { return }
+        didStartDeferredServices = true
+        Task { @MainActor in
+            await Task.yield()
+            SettingsJSONStore.beginAutomaticUserSettingsSync()
+            try? await Task.sleep(for: .seconds(2))
+            UpdateService.shared.start()
+            AIProviderRegistry.shared.installAll()
+        }
     }
 }
 
@@ -237,6 +245,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
+    func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
+        false
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if let window = Self.mainAppWindow() {
+            sender.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+        }
+        return false
+    }
+
     @MainActor
     func applicationDidFinishLaunching(_ notification: Notification) {
         SentryService.shared.start()
@@ -249,7 +269,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         ThemeService.shared.applyDefaultThemeIfNeeded()
         ThemeService.shared.migrateToPairedThemeIfNeeded()
         observeSystemAppearanceChanges()
-        UpdateService.shared.start()
         ModifierKeyMonitor.shared.start()
         NotificationSocketServer.shared.openProjectHandler = { [weak self] path in
             Task { @MainActor [weak self] in
@@ -257,7 +276,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
         NotificationSocketServer.shared.start()
-        AIProviderRegistry.shared.installAll()
         _ = AIUsageSettingsStore.isUsageEnabled()
         DiagnosticsMenuController.shared.install()
         observeSettingsRequests()
@@ -275,6 +293,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
               isDirectory.boolValue
         else { return }
         handleOpenProjectPath(expanded)
+    }
+
+    static func mainAppWindow(excluding excludedWindow: NSWindow? = nil) -> NSWindow? {
+        NSApp.windows.first { window in
+            window !== excludedWindow && window.identifier == ShortcutContext.mainWindowIdentifier
+        }
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -434,6 +458,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         settingsWindow = nil
     }
 
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard sender.identifier == ShortcutContext.mainWindowIdentifier else { return true }
+        NSApp.terminate(nil)
+        return false
+    }
+
     @MainActor
     private func observeSystemAppearanceChanges() {
         if let observer = systemAppearanceObserver {
@@ -521,6 +551,7 @@ struct WindowConfigurator: NSViewRepresentable {
         DispatchQueue.main.async {
             guard let w = v.window else { return }
             w.identifier = ShortcutContext.mainWindowIdentifier
+            if Self.closeDuplicateMainWindow(w) { return }
             w.titlebarAppearsTransparent = true
             w.titleVisibility = .hidden
             w.styleMask.insert(.fullSizeContentView)
@@ -552,6 +583,13 @@ struct WindowConfigurator: NSViewRepresentable {
 
     static func disableWindowTabbing(for window: NSWindow) {
         window.tabbingMode = .disallowed
+    }
+
+    static func closeDuplicateMainWindow(_ window: NSWindow) -> Bool {
+        guard let existingWindow = AppDelegate.mainAppWindow(excluding: window) else { return false }
+        existingWindow.makeKeyAndOrderFront(nil)
+        window.close()
+        return true
     }
 
     static func neutralizeSafeAreaInsets(in window: NSWindow) {

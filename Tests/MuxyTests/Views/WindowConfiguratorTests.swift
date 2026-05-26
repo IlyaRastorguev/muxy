@@ -14,4 +14,19 @@ struct WindowConfiguratorTests {
 
         #expect(window.tabbingMode == .disallowed)
     }
+
+    @Test("rejects untitled window requests")
+    func rejectsUntitledWindowRequests() {
+        let delegate = AppDelegate()
+
+        #expect(!delegate.applicationShouldOpenUntitledFile(NSApp))
+    }
+
+    @Test("allows auxiliary windows to close")
+    func allowsAuxiliaryWindowsToClose() {
+        let delegate = AppDelegate()
+        let window = NSWindow()
+
+        #expect(delegate.windowShouldClose(window))
+    }
 }

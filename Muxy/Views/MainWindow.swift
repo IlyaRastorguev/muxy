@@ -877,9 +877,10 @@ struct MainWindow: View {
     }
 
     private func mountedWorktreeKeys(for project: Project) -> [WorktreeKey] {
-        appState.workspaceRoots.keys
-            .filter { $0.projectID == project.id }
-            .sorted { $0.worktreeID.uuidString < $1.worktreeID.uuidString }
+        guard let activeKey = appState.activeWorktreeKey(for: project.id),
+              appState.workspaceRoots[activeKey] != nil
+        else { return [] }
+        return [activeKey]
     }
 
     private func handleShortcutAction(_ action: ShortcutAction) -> Bool {
@@ -961,7 +962,9 @@ struct MainWindow: View {
                 state: richInputState,
                 worktreeKey: worktreeKey,
                 onDismiss: { closeRichInputPanel() },
-                onSubmit: { appendReturn in submitRichInput(richInputState, appendReturn: appendReturn) }
+                onSubmit: { appendReturn, selectedText in
+                    submitRichInput(richInputState, appendReturn: appendReturn, selectedText: selectedText)
+                }
             )
             switch position {
             case .right:
@@ -1248,10 +1251,15 @@ struct MainWindow: View {
         }
     }
 
-    private func submitRichInput(_ richInput: RichInputState, appendReturn: Bool) {
+    private func submitRichInput(_ richInput: RichInputState, appendReturn: Bool, selectedText: String?) {
         let paneIDs = richInputBroadcast ? visibleTerminalPaneIDs() : [activeRichInputPaneID].compactMap(\.self)
         guard !paneIDs.isEmpty else { return }
-        RichInputSubmitter.submit(richInput: richInput, paneIDs: paneIDs, appendReturn: appendReturn)
+        RichInputSubmitter.submit(
+            richInput: richInput,
+            paneIDs: paneIDs,
+            appendReturn: appendReturn,
+            selectedText: selectedText
+        )
     }
 
     private func visibleTerminalPaneIDs() -> [UUID] {

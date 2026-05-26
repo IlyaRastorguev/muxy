@@ -243,7 +243,7 @@ final class GhosttyTerminalNSView: NSView {
         cleanupSurfaceConfigPointers()
     }
 
-    nonisolated(unsafe) private func cleanupSurfaceConfigPointers() {
+    nonisolated private func cleanupSurfaceConfigPointers() {
         surfaceEnvVarPointer?.deinitialize(count: surfaceEnvVarCount)
         surfaceEnvVarPointer?.deallocate()
         surfaceEnvVarPointer = nil

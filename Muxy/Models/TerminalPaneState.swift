@@ -49,7 +49,7 @@ final class TerminalPaneState: Identifiable {
         self.externalEditorFilePath = externalEditorFilePath
         self.restoredSession = restoredSession
         self.isRestorationDeferred = isRestorationDeferred
-        branchObserver.update(repoPath: initialWorkingDirectory ?? projectPath)
+        branchObserver.update(repoPath: initialWorkingDirectory ?? projectPath, refresh: false)
         if let restoredSession {
             let decision = TerminalSessionRestorePolicy.decision(for: restoredSession)
             restoreDecision = decision
