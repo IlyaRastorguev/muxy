@@ -14,6 +14,7 @@ struct MuxyApp: App {
     @State private var didStartDeferredServices = false
 
     init() {
+        LaunchArgumentGuard.terminateIfNeeded()
         _ = MuxyApp.launchDate
         let environment = AppEnvironment.live
         let projectStore = ProjectStore(persistence: environment.projectPersistence)
@@ -70,12 +71,13 @@ struct MuxyApp: App {
                     appDelegate.hasUnsavedEditorTabs = { [appState] in
                         appState.unsavedEditorTabs()
                     }
-                    appDelegate.openProjectFromPath = { [appState, projectStore, worktreeStore] path in
+                    appDelegate.openProjectFromPath = { [appState, projectStore, worktreeStore, projectGroupStore] path in
                         CLIAccessor.openProjectFromPath(
                             path,
                             appState: appState,
                             projectStore: projectStore,
-                            worktreeStore: worktreeStore
+                            worktreeStore: worktreeStore,
+                            projectGroupStore: projectGroupStore
                         )
                     }
                     appDelegate.flushPendingOpens()
@@ -99,17 +101,23 @@ struct MuxyApp: App {
                     }
                     appState.onProjectsEmptied = { [projectStore, worktreeStore] projectIDs in
                         for id in projectIDs {
-                            if let project = projectStore.projects.first(where: { $0.id == id }) {
-                                let knownWorktrees = worktreeStore.list(for: id)
-                                Task.detached {
-                                    await WorktreeStore.cleanupOnDisk(
+                            guard let project = projectStore.projects.first(where: { $0.id == id }) else {
+                                worktreeStore.removeProject(id)
+                                continue
+                            }
+                            let knownWorktrees = worktreeStore.list(for: id)
+                            Task {
+                                do {
+                                    try await WorktreeStore.cleanupOnDisk(
                                         for: project,
                                         knownWorktrees: knownWorktrees
                                     )
+                                    projectStore.remove(id: id)
+                                    worktreeStore.removeProject(id)
+                                } catch {
+                                    ToastState.shared.show("Could not remove \(project.name): \(error.localizedDescription)")
                                 }
                             }
-                            projectStore.remove(id: id)
-                            worktreeStore.removeProject(id)
                         }
                     }
                     projectStore.onProjectRemoved = { [projectGroupStore] projectID in
@@ -160,6 +168,7 @@ struct MuxyApp: App {
             try? await Task.sleep(for: .seconds(2))
             UpdateService.shared.start()
             AIProviderRegistry.shared.installAll()
+            LoginShellPath.hydrateInBackground()
             ExtensionStore.shared.startAll()
         }
     }

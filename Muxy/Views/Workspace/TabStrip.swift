@@ -640,6 +640,7 @@ private struct TabCell: View {
         case .editor: label += ", Editor"
         case .diffViewer: label += ", Diff Viewer"
         case .imageViewer: label += ", Image Viewer"
+        case .extensionWebView: label += ", Extension"
         }
         if tab.isRestorationDeferred { label += ", Not Restored" }
         if tab.isPinned { label += ", Pinned" }
@@ -676,6 +677,9 @@ private struct TabCell: View {
                     .frame(width: UIMetrics.iconSM, height: UIMetrics.iconSM)
             case .imageViewer:
                 Image(systemName: "photo")
+                    .font(.system(size: UIMetrics.fontBody, weight: .semibold))
+            case .extensionWebView:
+                Image(systemName: "puzzlepiece.extension")
                     .font(.system(size: UIMetrics.fontBody, weight: .semibold))
             }
         }
