@@ -93,12 +93,18 @@ final class TerminalPaneState: Identifiable {
     }
 
     func setTitle(_ newTitle: String) {
+        let resolvedTitle = newTitle.isEmpty ? fallbackTitle : newTitle
         titleDebounceTask?.cancel()
         titleDebounceTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(500))
-            guard !Task.isCancelled, let self, self.title != newTitle else { return }
-            self.title = newTitle
+            guard !Task.isCancelled, let self, self.title != resolvedTitle else { return }
+            self.title = resolvedTitle
         }
+    }
+
+    private var fallbackTitle: String {
+        guard let cwd = currentWorkingDirectory, !cwd.isEmpty else { return "Terminal" }
+        return cwd
     }
 
     func setWorkingDirectory(_ path: String) {
