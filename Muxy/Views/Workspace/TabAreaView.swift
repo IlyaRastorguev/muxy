@@ -212,6 +212,11 @@ private struct TabContentView: View {
                             pane.activateDeferredRestoration()
                         }
                     }
+                    .onChange(of: visible) { _, isVisible in
+                        if isVisible {
+                            pane.activateDeferredRestoration()
+                        }
+                    }
             } else {
                 TerminalPane(
                     state: pane,

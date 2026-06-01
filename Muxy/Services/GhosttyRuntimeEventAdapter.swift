@@ -73,9 +73,6 @@ final class GhosttyRuntimeEventAdapter: GhosttyRuntimeEventHandling {
             let realTitle = String(titleString.dropFirst(sentinel.count))
             DispatchQueue.main.async {
                 view.onCommandDroppedToShell?()
-                if let paneID = TerminalViewRegistry.shared.paneID(for: view) {
-                    TerminalCommandTracker.shared.recordShellCommandCandidate(realTitle, paneID: paneID)
-                }
                 view.onTitleChange?(realTitle)
             }
             return
