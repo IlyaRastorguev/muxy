@@ -12,6 +12,7 @@ struct ExpandedProjectRow: View {
     let onSetLogo: (String?) -> Void
     let onSetIcon: (String?) -> Void
     let onSetIconColor: (String?) -> Void
+    let onSetWorktreesEnabled: (Bool) -> Void
 
     @Environment(AppState.self) private var appState
     @Environment(WorktreeStore.self) private var worktreeStore
@@ -31,6 +32,7 @@ struct ExpandedProjectRow: View {
     @State private var isRefreshingWorktrees = false
     @State private var showColorPicker = false
     @State private var showSymbolPicker = false
+    @State private var pendingWorktreeRemoval: WorktreeRemovalConfirmation?
     @State private var removalRequest: WorktreeRemovalRequest?
 
     private var isActive: Bool {
@@ -50,11 +52,25 @@ struct ExpandedProjectRow: View {
     }
 
     private var hasWorktreeUI: Bool {
-        isGitRepo || worktrees.count > 1
+        project.worktreesEnabled && (isGitRepo || worktrees.count > 1)
     }
 
     private var displayLetter: String {
         String(project.name.prefix(1)).uppercased()
+    }
+
+    private func hideHome() {
+        HomeProjectPreferences.isVisible = false
+    }
+
+    private var worktreesEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { project.worktreesEnabled },
+            set: { enabled in
+                onSetWorktreesEnabled(enabled)
+                if !enabled { worktreesExpanded = false }
+            }
+        )
     }
 
     var body: some View {
@@ -65,6 +81,10 @@ struct ExpandedProjectRow: View {
             }
         }
         .task(id: project.path) {
+            guard !project.isHome else {
+                isCheckingGitRepo = false
+                return
+            }
             isCheckingGitRepo = true
             try? await Task.sleep(for: .seconds(2))
             guard !Task.isCancelled else { return }
@@ -81,35 +101,11 @@ struct ExpandedProjectRow: View {
             }
         }
         .contextMenu {
-            Button("Set Logo...") { pickLogoImage() }
-            if project.logo != nil {
-                Button("Remove Logo") { onSetLogo(nil) }
+            if project.isHome {
+                Button("Hide Home") { hideHome() }
+            } else {
+                projectContextMenu
             }
-            Button("Set Icon...") { showSymbolPicker = true }
-            if project.icon != nil {
-                Button("Remove Icon") { onSetIcon(nil) }
-            }
-            Button("Set Icon Color...") { showColorPicker = true }
-            if project.iconColor != nil {
-                Button("Reset Icon Color") { onSetIconColor(nil) }
-            }
-            Divider()
-            Button("Rename Project") { startRename() }
-            if isGitRepo {
-                Divider()
-                Button("Refresh Worktrees") { Task { await refreshWorktrees() } }
-                Button("New Worktree…") { showCreateWorktreeSheet = true }
-            } else if isCheckingGitRepo {
-                Divider()
-                Button("Loading Worktrees…") {}
-                    .disabled(true)
-            }
-            if !projectGroupStore.groups.isEmpty {
-                Divider()
-                ProjectGroupMembershipMenu(project: project)
-            }
-            Divider()
-            Button("Remove Project", role: .destructive, action: onRemove)
         }
         .sheet(isPresented: $showCreateWorktreeSheet) {
             CreateWorktreeSheet(project: project) { result in
@@ -151,11 +147,28 @@ struct ExpandedProjectRow: View {
                 showSymbolPicker = false
             }
         }
+        .alert(
+            pendingWorktreeRemoval?.title ?? "",
+            isPresented: worktreeRemovalAlertBinding,
+            presenting: pendingWorktreeRemoval
+        ) { confirmation in
+            Button("Remove", role: .destructive) {
+                performRemove(worktree: confirmation.worktree)
+                pendingWorktreeRemoval = nil
+            }
+            .keyboardShortcut(.defaultAction)
+            Button("Cancel", role: .cancel) {
+                pendingWorktreeRemoval = nil
+            }
+            .keyboardShortcut(.cancelAction)
+        } message: { confirmation in
+            Text(confirmation.message)
+        }
     }
 
     private var projectHeader: some View {
         HStack(spacing: UIMetrics.spacing4) {
-            projectIcon
+            iconOrBadge
 
             VStack(alignment: .leading, spacing: UIMetrics.scaled(1)) {
                 Text(project.name)
@@ -201,13 +214,6 @@ struct ExpandedProjectRow: View {
                 onSelect()
             }
         }
-        .overlay {
-            if showShortcutBadge, let shortcutIndex,
-               let action = ShortcutAction.projectAction(for: shortcutIndex)
-            {
-                ShortcutBadge(label: KeyBindingStore.shared.combo(for: action).displayString)
-            }
-        }
     }
 
     private var worktreeChevron: some View {
@@ -242,6 +248,15 @@ struct ExpandedProjectRow: View {
         }
     }
 
+    @ViewBuilder
+    private var iconOrBadge: some View {
+        if let shortcutIndex, let hint = shortcutHint {
+            ShortcutIconBadge(number: shortcutIndex, size: UIMetrics.iconXXL, combo: hint)
+        } else {
+            projectIcon
+        }
+    }
+
     private var projectIcon: some View {
         let logo = resolvedLogo
         let unread = NotificationStore.shared.unreadCount(for: project.id)
@@ -250,7 +265,11 @@ struct ExpandedProjectRow: View {
             RoundedRectangle(cornerRadius: UIMetrics.radiusMD)
                 .fill(iconBackground(hasLogo: logo != nil))
 
-            if let logo {
+            if project.isHome {
+                Image(systemName: Project.homeIcon)
+                    .font(.system(size: UIMetrics.fontTitleLarge, weight: .medium))
+                    .foregroundStyle(MuxyTheme.accentForeground)
+            } else if let logo {
                 Image(nsImage: logo)
                     .resizable()
                     .scaledToFill()
@@ -320,12 +339,51 @@ struct ExpandedProjectRow: View {
         return label
     }
 
+    @ViewBuilder
+    private var projectContextMenu: some View {
+        Button("Set Logo...") { pickLogoImage() }
+        if project.logo != nil {
+            Button("Remove Logo") { onSetLogo(nil) }
+        }
+        Button("Set Icon...") { showSymbolPicker = true }
+        if project.icon != nil {
+            Button("Remove Icon") { onSetIcon(nil) }
+        }
+        Button("Set Icon Color...") { showColorPicker = true }
+        if project.iconColor != nil {
+            Button("Reset Icon Color") { onSetIconColor(nil) }
+        }
+        Divider()
+        Button("Rename Project") { startRename() }
+        if isGitRepo {
+            Divider()
+            Toggle("Worktrees", isOn: worktreesEnabledBinding)
+            if project.worktreesEnabled {
+                Button("Refresh Worktrees") { Task { await refreshWorktrees() } }
+                Button("New Worktree…") { showCreateWorktreeSheet = true }
+            }
+        } else if isCheckingGitRepo {
+            Divider()
+            Button("Loading Worktrees…") {}
+                .disabled(true)
+        }
+        if !projectGroupStore.groups.isEmpty {
+            Divider()
+            ProjectGroupMembershipMenu(project: project)
+        }
+        Divider()
+        Button("Remove Project", role: .destructive, action: onRemove)
+    }
+
     private var resolvedLogo: NSImage? {
         guard let filename = project.logo else { return nil }
         return NSImage(contentsOfFile: ProjectLogoStorage.logoPath(for: filename))
     }
 
     private func iconBackground(hasLogo: Bool) -> AnyShapeStyle {
+        if project.isHome {
+            return AnyShapeStyle(hovered ? MuxyTheme.accent.opacity(0.85) : MuxyTheme.accent)
+        }
         if hasLogo { return AnyShapeStyle(Color.clear) }
         if let tint = ProjectIconColor.color(for: project.iconColor) {
             return AnyShapeStyle(hovered ? tint.opacity(0.85) : tint)
@@ -347,13 +405,11 @@ struct ExpandedProjectRow: View {
         return AnyShapeStyle(Color.clear)
     }
 
-    private var showShortcutBadge: Bool {
+    private var shortcutHint: KeyCombo? {
         guard let shortcutIndex,
               let action = ShortcutAction.projectAction(for: shortcutIndex)
-        else { return false }
-        return ModifierKeyMonitor.shared.isHolding(
-            modifiers: KeyBindingStore.shared.combo(for: action).modifiers
-        )
+        else { return nil }
+        return ModifierKeyMonitor.shared.hint(for: action)
     }
 
     private func pickLogoImage() {
@@ -362,6 +418,7 @@ struct ExpandedProjectRow: View {
         panel.allowedContentTypes = [.image]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
+        panel.directoryURL = URL(fileURLWithPath: project.path)
 
         guard panel.runModal() == .OK,
               let url = panel.url,
@@ -391,34 +448,24 @@ struct ExpandedProjectRow: View {
         }
     }
 
+    @MainActor
     private func requestRemove(worktree: Worktree) async {
         let hasChanges = await GitWorktreeService.shared.hasUncommittedChanges(worktreePath: worktree.path)
-        if !hasChanges {
-            performRemove(worktree: worktree)
-            return
-        }
-        presentRemoveConfirmation(worktree: worktree)
+        pendingWorktreeRemoval = WorktreeRemovalConfirmation(
+            worktree: worktree,
+            hasUncommittedChanges: hasChanges
+        )
     }
 
-    private func presentRemoveConfirmation(worktree: Worktree) {
-        guard let window = NSApp.keyWindow ?? NSApp.mainWindow,
-              window.attachedSheet == nil
-        else { return }
-
-        let alert = NSAlert()
-        alert.messageText = "Remove worktree \"\(worktree.name)\"?"
-        alert.informativeText = "This worktree has uncommitted changes. Removing it will permanently discard them."
-        alert.alertStyle = .warning
-        alert.icon = NSApp.applicationIconImage
-        alert.addButton(withTitle: "Remove")
-        alert.addButton(withTitle: "Cancel")
-        alert.buttons[0].keyEquivalent = "\r"
-        alert.buttons[1].keyEquivalent = "\u{1b}"
-
-        alert.beginSheetModal(for: window) { response in
-            guard response == .alertFirstButtonReturn else { return }
-            performRemove(worktree: worktree)
-        }
+    private var worktreeRemovalAlertBinding: Binding<Bool> {
+        Binding(
+            get: { pendingWorktreeRemoval != nil },
+            set: { newValue in
+                if !newValue {
+                    pendingWorktreeRemoval = nil
+                }
+            }
+        )
     }
 
     private func performRemove(worktree: Worktree) {
@@ -486,13 +533,6 @@ private struct ExpandedWorktreeRow: View {
         return worktree.name
     }
 
-    private var branchLabel: String? {
-        guard !worktree.isPrimary else { return nil }
-        guard let branch = worktree.branch, !branch.isEmpty else { return nil }
-        guard branch.caseInsensitiveCompare(displayName) != .orderedSame else { return nil }
-        return branch
-    }
-
     var body: some View {
         HStack(spacing: UIMetrics.spacing3) {
             leadingIndicator
@@ -506,25 +546,15 @@ private struct ExpandedWorktreeRow: View {
                     .onSubmit { commitRename() }
                     .onExitCommand { cancelRename() }
             } else {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: UIMetrics.spacing2) {
-                        Text(displayName)
-                            .font(.system(size: UIMetrics.fontBody, weight: activeStyle ? .semibold : .regular))
-                            .foregroundStyle(MuxyTheme.fg)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
+                HStack(spacing: UIMetrics.spacing2) {
+                    Text(displayName)
+                        .font(.system(size: UIMetrics.fontBody, weight: activeStyle ? .semibold : .regular))
+                        .foregroundStyle(MuxyTheme.fg)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
 
-                        if worktree.isPrimary {
-                            PrimaryBadge()
-                        }
-                    }
-
-                    if let branch = branchLabel {
-                        Text(branch)
-                            .font(.system(size: UIMetrics.fontCaption, design: .monospaced))
-                            .foregroundStyle(MuxyTheme.fg)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                    if worktree.isPrimary {
+                        PrimaryBadge()
                     }
                 }
             }
@@ -562,7 +592,6 @@ private struct ExpandedWorktreeRow: View {
     private var worktreeAccessibilityLabel: String {
         var label = displayName
         if worktree.isPrimary { label += ", primary" }
-        if let branch = branchLabel { label += ", branch: \(branch)" }
         return label
     }
 

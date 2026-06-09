@@ -170,39 +170,258 @@ struct ExtensionGrantStoreTests {
         #expect(result == .ask)
     }
 
-    @Test("default remember match for exec uses two-token prefix")
-    func defaultRememberPrefix() {
+    @Test("default remember match for exec uses base command only")
+    func defaultRememberBaseCommand() {
         let match = ExtensionGrantSuggestion.defaultRememberMatch(
             verb: .exec,
             payload: .exec(argv: ["git", "status", "--short"], shell: nil)
         )
-        if case let .argvPrefix(tokens) = match {
-            #expect(tokens == ["git", "status"])
-        } else {
-            Issue.record("expected argvPrefix, got \(match)")
-        }
+        #expect(match == .argvPrefix(["git"]))
     }
 
-    @Test("default remember match for two-token argv uses argvExact")
-    func defaultRememberExactForShortArgv() {
+    @Test("default remember match for shell-form exec uses shellExact")
+    func defaultRememberShellForm() {
         let match = ExtensionGrantSuggestion.defaultRememberMatch(
             verb: .exec,
-            payload: .exec(argv: ["npm", "test"], shell: nil)
+            payload: .exec(argv: nil, shell: "echo hi | grep h")
         )
-        if case let .argvExact(tokens) = match {
-            #expect(tokens == ["npm", "test"])
-        } else {
-            Issue.record("expected argvExact, got \(match)")
-        }
+        #expect(match == .shellExact("echo hi | grep h"))
     }
 
-    @Test("default remember for panes uses paneEquals")
+    @Test("default remember match for empty argv falls back to any")
+    func defaultRememberEmptyArgv() {
+        let match = ExtensionGrantSuggestion.defaultRememberMatch(
+            verb: .exec,
+            payload: .exec(argv: [], shell: nil)
+        )
+        #expect(match == .any)
+    }
+
+    @Test("remembered exec allows other subcommands of the same base")
+    func rememberedExecAllowsOtherSubcommands() {
+        let store = makeStore()
+        let rule = ExtensionGrantRule(
+            extensionID: "ext",
+            verb: .exec,
+            match: ExtensionGrantSuggestion.defaultRememberMatch(
+                verb: .exec,
+                payload: .exec(argv: ["git", "status"], shell: nil)
+            ),
+            decision: .allow
+        )
+        store.add(rule)
+        let result = store.evaluate(
+            extensionID: "ext",
+            verb: .exec,
+            payload: .exec(argv: ["git", "push"], shell: nil)
+        )
+        #expect(result == .allow(ruleID: rule.id))
+    }
+
+    @Test("remembered exec does not allow a different base command")
+    func rememberedExecRejectsDifferentBase() {
+        let store = makeStore()
+        store.add(ExtensionGrantRule(
+            extensionID: "ext",
+            verb: .exec,
+            match: ExtensionGrantSuggestion.defaultRememberMatch(
+                verb: .exec,
+                payload: .exec(argv: ["git", "status"], shell: nil)
+            ),
+            decision: .allow
+        ))
+        let result = store.evaluate(
+            extensionID: "ext",
+            verb: .exec,
+            payload: .exec(argv: ["rm", "-rf", "/"], shell: nil)
+        )
+        #expect(result == .ask)
+    }
+
+    @Test("default remember for panes allows the verb for any pane")
     func defaultRememberPane() {
         let match = ExtensionGrantSuggestion.defaultRememberMatch(
             verb: .panesReadScreen,
             payload: .pane(id: "pane-uuid")
         )
-        #expect(match == .paneEquals("pane-uuid"))
+        #expect(match == .any)
+    }
+
+    @Test("remembered pane verb allows a different pane in a later session")
+    func rememberedPaneAllowsDifferentPane() {
+        let store = makeStore()
+        let rule = ExtensionGrantRule(
+            extensionID: "ext",
+            verb: .panesSendKeys,
+            match: ExtensionGrantSuggestion.defaultRememberMatch(
+                verb: .panesSendKeys,
+                payload: .pane(id: "pane-a")
+            ),
+            decision: .allow
+        )
+        store.add(rule)
+        let result = store.evaluate(
+            extensionID: "ext",
+            verb: .panesSendKeys,
+            payload: .pane(id: "pane-b")
+        )
+        #expect(result == .allow(ruleID: rule.id))
+    }
+
+    @Test("default remember for foreign tabs allows the verb for any tab")
+    func defaultRememberForeignTab() {
+        let match = ExtensionGrantSuggestion.defaultRememberMatch(
+            verb: .tabsOpenForeign,
+            payload: .foreignTab(targetExtensionID: "target", tabTypeID: "tab")
+        )
+        #expect(match == .any)
+    }
+
+    @Test("remoteActionEquals rule matches only the same action")
+    func remoteActionEqualsMatch() {
+        let store = makeStore()
+        let rule = ExtensionGrantRule(
+            extensionID: "ext",
+            verb: .remoteInvoke,
+            match: .remoteActionEquals("forecast"),
+            decision: .allow
+        )
+        store.add(rule)
+        #expect(store.evaluate(
+            extensionID: "ext",
+            verb: .remoteInvoke,
+            payload: .remote(action: "forecast", deviceName: "iPad")
+        ) == .allow(ruleID: rule.id))
+        #expect(store.evaluate(
+            extensionID: "ext",
+            verb: .remoteInvoke,
+            payload: .remote(action: "other", deviceName: "iPad")
+        ) == .ask)
+    }
+
+    @Test("remote invoke default remember match scopes to the action")
+    func remoteInvokeDefaultRemember() {
+        let match = ExtensionGrantSuggestion.defaultRememberMatch(
+            verb: .remoteInvoke,
+            payload: .remote(action: "forecast", deviceName: "iPad")
+        )
+        #expect(match == .remoteActionEquals("forecast"))
+    }
+
+    @Test("gitOperationEquals rule matches only the same operation")
+    func gitOperationEqualsMatch() {
+        let store = makeStore()
+        let rule = ExtensionGrantRule(
+            extensionID: "ext",
+            verb: .gitWrite,
+            match: .gitOperationEquals("push"),
+            decision: .allow
+        )
+        store.add(rule)
+        #expect(store.evaluate(
+            extensionID: "ext",
+            verb: .gitWrite,
+            payload: .git(operation: "push", repoPath: "/repo")
+        ) == .allow(ruleID: rule.id))
+        #expect(store.evaluate(
+            extensionID: "ext",
+            verb: .gitWrite,
+            payload: .git(operation: "discard", repoPath: "/repo")
+        ) == .ask)
+    }
+
+    @Test("git write default remember match scopes to the operation")
+    func gitWriteDefaultRemember() {
+        let match = ExtensionGrantSuggestion.defaultRememberMatch(
+            verb: .gitWrite,
+            payload: .git(operation: "push", repoPath: "/repo")
+        )
+        #expect(match == .gitOperationEquals("push"))
+    }
+
+    @Test("hostEquals rule matches only the same host")
+    func hostEqualsMatch() {
+        let store = makeStore()
+        let rule = ExtensionGrantRule(
+            extensionID: "ext",
+            verb: .httpFetch,
+            match: .hostEquals("api.github.com"),
+            decision: .allow
+        )
+        store.add(rule)
+        #expect(store.evaluate(
+            extensionID: "ext",
+            verb: .httpFetch,
+            payload: .http(hostname: "api.github.com", method: "GET", url: "https://api.github.com/x")
+        ) == .allow(ruleID: rule.id))
+        #expect(store.evaluate(
+            extensionID: "ext",
+            verb: .httpFetch,
+            payload: .http(hostname: "evil.com", method: "GET", url: "https://evil.com/x")
+        ) == .ask)
+    }
+
+    @Test("http fetch default remember match scopes to the host")
+    func httpFetchDefaultRemember() {
+        let match = ExtensionGrantSuggestion.defaultRememberMatch(
+            verb: .httpFetch,
+            payload: .http(hostname: "api.github.com", method: "POST", url: "https://api.github.com/x")
+        )
+        #expect(match == .hostEquals("api.github.com"))
+    }
+
+    @Test("hostEquals rule survives a persistence round-trip")
+    func hostEqualsPersists() {
+        let url = tempURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let first = ExtensionGrantStore(fileURL: url)
+        let rule = ExtensionGrantRule(
+            extensionID: "ext",
+            verb: .httpFetch,
+            match: .hostEquals("api.github.com"),
+            decision: .allow
+        )
+        first.add(rule)
+        let second = ExtensionGrantStore(fileURL: url)
+        #expect(second.evaluate(
+            extensionID: "ext",
+            verb: .httpFetch,
+            payload: .http(hostname: "api.github.com", method: "GET", url: "https://api.github.com/x")
+        ) == .allow(ruleID: rule.id))
+    }
+
+    @Test("blockKind replaces every rule for the verb with a blocked any-deny")
+    func blockKindReplacesRules() {
+        let store = makeStore()
+        store.add(ExtensionGrantRule(
+            extensionID: "ext",
+            verb: .exec,
+            match: .argvExact(["git", "status"]),
+            decision: .allow
+        ))
+        store.blockKind(extensionID: "ext", verb: .exec)
+
+        #expect(store.rules.count == 1)
+        let rule = store.rules.first
+        #expect(rule?.match == .any)
+        #expect(rule?.decision == .blocked)
+        #expect(store.evaluate(
+            extensionID: "ext",
+            verb: .exec,
+            payload: .exec(argv: ["git", "status"], shell: nil)
+        ) == .deny(ruleID: rule!.id))
+    }
+
+    @Test("deny-remember on an any-default verb stays deny, not blocked")
+    func denyRememberStaysDeny() {
+        let store = makeStore()
+        store.add(ExtensionGrantRule(
+            extensionID: "ext",
+            verb: .panesSend,
+            match: .any,
+            decision: .deny
+        ))
+        #expect(store.rules.first?.decision == .deny)
     }
 
     private func makeStore() -> ExtensionGrantStore {

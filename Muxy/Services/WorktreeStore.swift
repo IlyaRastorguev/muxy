@@ -124,21 +124,17 @@ final class WorktreeStore {
 
     func remove(worktreeID: UUID, from projectID: UUID) {
         guard var list = worktrees[projectID] else { return }
-        let removed = list.filter { $0.id == worktreeID && $0.canBeRemoved }
         list.removeAll { $0.id == worktreeID && $0.canBeRemoved }
         setWorktrees(list, for: projectID)
         save(projectID: projectID)
-        for worktree in removed {
-            VCSStateStore.shared.remove(path: worktree.path)
-        }
     }
 
     func refreshFromGit(project: Project) async throws -> [Worktree] {
         ensurePrimary(for: project)
         let records = try await listGitWorktrees(project.path).filter { !$0.isBare && !$0.isPrunable }
         var list = worktrees[project.id] ?? []
-        let projectKey = Self.canonicalPath(project.path)
-        let recordKeys = Set(records.map { Self.canonicalPath($0.path) })
+        let projectKey = GitWorktreeService.canonicalPath(project.path)
+        let recordKeys = Set(records.map { GitWorktreeService.canonicalPath($0.path) })
 
         if let primaryIndex = list.firstIndex(where: \.isPrimary) {
             list[primaryIndex].path = project.path
@@ -149,7 +145,7 @@ final class WorktreeStore {
 
         var existingByKey: [String: Worktree] = [:]
         for worktree in list {
-            let key = Self.canonicalPath(worktree.path)
+            let key = GitWorktreeService.canonicalPath(worktree.path)
             if let existing = existingByKey[key] {
                 if worktree.isPrimary, !existing.isPrimary {
                     existingByKey[key] = worktree
@@ -160,7 +156,7 @@ final class WorktreeStore {
         }
 
         for record in records {
-            let recordKey = Self.canonicalPath(record.path)
+            let recordKey = GitWorktreeService.canonicalPath(record.path)
             if recordKey == projectKey {
                 if let primaryIndex = list.firstIndex(where: \.isPrimary) {
                     list[primaryIndex].branch = record.branch
@@ -189,15 +185,11 @@ final class WorktreeStore {
         }
 
         let sorted = sortPrimaryFirst(list.filter {
-            !$0.isExternallyManaged || recordKeys.contains(Self.canonicalPath($0.path))
+            !$0.isExternallyManaged || recordKeys.contains(GitWorktreeService.canonicalPath($0.path))
         })
         setWorktrees(sorted, for: project.id)
         save(projectID: project.id)
         return sorted
-    }
-
-    private static func canonicalPath(_ path: String) -> String {
-        URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
     }
 
     static func cleanupOnDisk(
@@ -280,11 +272,6 @@ final class WorktreeStore {
     }
 
     func removeProject(_ projectID: UUID) {
-        let removedPaths: [String] = if let existing = worktrees[projectID] {
-            existing.map(\.path)
-        } else {
-            []
-        }
         if let existing = worktrees[projectID] {
             for worktree in existing where projectIDByPath[worktree.path] == projectID {
                 projectIDByPath.removeValue(forKey: worktree.path)
@@ -295,9 +282,6 @@ final class WorktreeStore {
             try persistence.removeWorktrees(projectID: projectID)
         } catch {
             logger.error("Failed to remove worktrees file for project \(projectID): \(error)")
-        }
-        for path in removedPaths {
-            VCSStateStore.shared.remove(path: path)
         }
     }
 

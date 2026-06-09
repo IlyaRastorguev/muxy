@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 struct WorktreePopover: View {
@@ -11,6 +10,7 @@ struct WorktreePopover: View {
 
     @Environment(AppState.self) private var appState
     @Environment(WorktreeStore.self) private var worktreeStore
+    @State private var pendingRemoval: WorktreeRemovalConfirmation?
 
     private var worktrees: [Worktree] {
         worktreeStore.list(for: project.id)
@@ -58,6 +58,23 @@ struct WorktreePopover: View {
                 .padding(.vertical, UIMetrics.spacing1)
             }
         )
+        .alert(
+            pendingRemoval?.title ?? "",
+            isPresented: removalAlertBinding,
+            presenting: pendingRemoval
+        ) { confirmation in
+            Button("Remove", role: .destructive) {
+                onRequestRemove(confirmation.worktree)
+                pendingRemoval = nil
+            }
+            .keyboardShortcut(.defaultAction)
+            Button("Cancel", role: .cancel) {
+                pendingRemoval = nil
+            }
+            .keyboardShortcut(.cancelAction)
+        } message: { confirmation in
+            Text(confirmation.message)
+        }
     }
 
     private var footerActions: [PopoverFooterAction] {
@@ -71,34 +88,24 @@ struct WorktreePopover: View {
         ]
     }
 
+    @MainActor
     private func requestRemove(worktree: Worktree) async {
         let hasChanges = await GitWorktreeService.shared.hasUncommittedChanges(worktreePath: worktree.path)
-        if !hasChanges {
-            onRequestRemove(worktree)
-            return
-        }
-        presentRemoveConfirmation(worktree: worktree)
+        pendingRemoval = WorktreeRemovalConfirmation(
+            worktree: worktree,
+            hasUncommittedChanges: hasChanges
+        )
     }
 
-    private func presentRemoveConfirmation(worktree: Worktree) {
-        guard let window = NSApp.keyWindow ?? NSApp.mainWindow,
-              window.attachedSheet == nil
-        else { return }
-
-        let alert = NSAlert()
-        alert.messageText = "Remove worktree \"\(worktree.name)\"?"
-        alert.informativeText = "This worktree has uncommitted changes. Removing it will permanently discard them."
-        alert.alertStyle = .warning
-        alert.icon = NSApp.applicationIconImage
-        alert.addButton(withTitle: "Remove")
-        alert.addButton(withTitle: "Cancel")
-        alert.buttons[0].keyEquivalent = "\r"
-        alert.buttons[1].keyEquivalent = "\u{1b}"
-
-        alert.beginSheetModal(for: window) { response in
-            guard response == .alertFirstButtonReturn else { return }
-            onRequestRemove(worktree)
-        }
+    private var removalAlertBinding: Binding<Bool> {
+        Binding(
+            get: { pendingRemoval != nil },
+            set: { newValue in
+                if !newValue {
+                    pendingRemoval = nil
+                }
+            }
+        )
     }
 }
 
@@ -118,12 +125,6 @@ private struct WorktreePopoverRow: View {
     private var displayName: String {
         if worktree.isPrimary, worktree.name.isEmpty { return "main" }
         return worktree.name
-    }
-
-    private var branchSubtitle: String? {
-        guard let branch = worktree.branch, !branch.isEmpty else { return nil }
-        guard branch.caseInsensitiveCompare(displayName) != .orderedSame else { return nil }
-        return branch
     }
 
     var body: some View {
@@ -155,13 +156,6 @@ private struct WorktreePopoverRow: View {
                                 .background(MuxyTheme.surface, in: Capsule())
                         }
                     }
-                }
-                if let branch = branchSubtitle, !isRenaming {
-                    Text(branch)
-                        .font(.system(size: UIMetrics.fontCaption, design: .monospaced))
-                        .foregroundStyle(MuxyTheme.fgDim)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
                 }
             }
             Spacer(minLength: 4)
